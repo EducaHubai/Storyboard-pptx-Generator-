@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VideoStoryboard",
+  "description": "Storyboard structure produced by POST /upload-pdf, consumed by the frontend and by POST /generate-pptx",
+  "type": "object",
+  "required": ["meta", "scenes", "educahub"],
+  "properties": {
+
+    "meta": {
+      "type": "object",
+      "required": ["title", "course", "estimatedDuration", "language", "version", "sectionPalette"],
+      "properties": {
+        "title": { "type": "string", "example": "AI-Assisted Writing of Learning Objectives" },
+        "course": { "type": "string", "example": "MC-B1 · Diseño Instruccional con IA" },
+        "estimatedDuration": { "type": "string", "example": "4:30–5:30 min" },
+        "language": { "type": "string", "example": "English" },
+        "heygenFormat": { "type": "string", "example": "Landscape talking head + screen overlays" },
+        "version": { "type": "string", "example": "v1.0" },
+        "date": { "type": "string", "format": "date" },
+        "avatarVersions": {
+          "type": "array",
+          "description": "One entry per section, matching the avatar look used during that section",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "section"],
+            "properties": {
+              "id": { "type": "string", "example": "A" },
+              "label": { "type": "string", "example": "Welcoming look" },
+              "section": { "type": "string", "example": "Opening" }
+            }
+          }
+        },
+        "sectionPalette": {
+          "type": "array",
+          "description": "One hex color per section, used for title cards and accents",
+          "items": {
+            "type": "object",
+            "required": ["section", "hex"],
+            "properties": {
+              "section": { "type": "string", "example": "Opening" },
+              "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "example": "#60BFB8" }
+            }
+          }
+        }
+      }
+    },
+
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/scene" }
+    },
+
+    "educahub": {
+      "type": "object",
+      "required": ["en", "es"],
+      "properties": {
+        "en": { "$ref": "#/definitions/educahubFields" },
+        "es": { "$ref": "#/definitions/educahubFields" }
+      }
+    }
+  },
+
+  "definitions": {
+
+    "scene": {
+      "type": "object",
+      "required": ["id", "type", "section", "durationSeconds", "script", "productionNotes", "visual"],
+      "properties": {
+
+        "id": { "type": "integer", "minimum": 1, "description": "Sequential scene number, matches SCENE N in the docx format" },
+
+        "type": {
+          "type": "string",
+          "enum": ["title_card", "content"],
+          "description": "title_card = silent section divider, content = avatar speaks"
+        },
+
+        "section": { "type": "string", "example": "Opening", "description": "Section name this scene belongs to" },
+
+        "blockLabel": {
+          "type": ["string", "null"],
+          "description": "Optional sub-label for content scenes within a multi-block section, e.g. 'Block 1: Theoretical Foundations'"
+        },
+
+        "durationSeconds": { "type": "integer", "minimum": 3, "example": 35 },
+
+        "script": {
+          "type": "string",
+          "description": "Verbatim avatar speech. Empty string or '[No narration]' for title cards. Plain prose, [pause] markers as literal text where the speaker should pause. NEVER bullet points.",
+          "example": "Welcome. In this video, we explore how artificial intelligence can transform one of the most technically demanding tasks in instructional design. [pause] By the end of this video, you will understand..."
+        },
+
+        "productionNotes": {
+          "type": "object",
+          "required": ["toneAndPace", "avatarVersion", "transitionIn", "transitionOut"],
+          "properties": {
+            "toneAndPace": { "type": "string", "example": "Warm, welcoming tone. Pace is measured." },
+            "emphasis": { "type": ["string", "null"], "example": "Emphasise 'expert curator' — this reframes the designer's role positively." },
+            "avatarVersion": { "type": "string", "example": "A — welcoming look" },
+            "transitionIn": { "type": "string", "example": "1s fade-in from title card" },
+            "transitionOut": { "type": "string", "example": "cut to Context title card" }
+          }
+        },
+
+        "visual": {
+          "type": "object",
+          "required": ["background", "onScreenText", "avatarFormat", "avatarPosition", "graphicType"],
+          "properties": {
+            "background": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": ["solid", "gradient", "image"] },
+                "colors": {
+                  "type": "array",
+                  "items": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+                  "description": "1 color for solid, 2 for gradient"
+                },
+                "description": { "type": ["string", "null"], "example": "Blurred conceptual image, notebook/writing" }
+              }
+            },
+            "onScreenText": {
+              "type": "string",
+              "example": "AI-Assisted Writing of Learning Objectives"
+            },
+            "graphicType": {
+              "type": "string",
+              "description": "Manually selected by the user in the graphic-selection screen. Null/none for title cards.",
+              "enum": [
+                "none",
+                "text_only",
+                "before_after",
+                "blooms_bars",
+                "smart_grid",
+                "three_node_sequence",
+                "numbered_list",
+                "validation_flow",
+                "data_table",
+                "pillar_columns",
+                "prompt_window"
+              ]
+            },
+            "graphicData": {
+              "type": "object",
+              "description": "Free-form payload whose shape depends on graphicType. See graphicData shapes below.",
+              "additionalProperties": true
+            },
+            "avatarFormat": { "type": "string", "example": "Landscape 16:9" },
+            "avatarPosition": { "type": "string", "enum": ["left", "right", "center", "hidden"] }
+          }
+        }
+      }
+    },
+
+    "educahubFields": {
+      "type": "object",
+      "required": ["name", "shortDescription", "tags", "longDescription"],
+      "properties": {
+        "name": { "type": "string" },
+        "shortDescription": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "longDescription": { "type": "string" }
+      }
+    }
+  }
+}

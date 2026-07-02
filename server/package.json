@@ -1,0 +1,16 @@
+{
+  "name": "storyboard-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.67.0",
+    "pdf-parse": "^1.1.1",
+    "pptxgenjs": "^3.12.0"
+  }
+}
