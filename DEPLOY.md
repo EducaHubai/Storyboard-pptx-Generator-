@@ -46,11 +46,20 @@ storyboard-generator/
 ├── Dockerfile
 ├── .dockerignore
 ├── .gitignore
+├── scripts/
+│   └── generate-icons.js       (opcional — solo si añades iconos nuevos)
 ├── server/
 │   ├── index.js
 │   ├── package.json
 │   ├── storyboard.schema.json
-│   └── system-prompt-upload-pdf.md
+│   ├── system-prompt-upload-pdf.md
+│   ├── system-prompt-pdf-to-plan.md
+│   ├── system-prompt-ppt-plan.md
+│   ├── system-prompt-ppt-generate.md
+│   └── assets/                 (⚠️ obligatorio — iconos + degradados del PPT v2.0)
+│       ├── gradient_full.png
+│       ├── gradient_rev.png
+│       └── icons/               (180 PNG — no lo edites a mano)
 └── client/
     ├── package.json
     ├── public/
@@ -59,6 +68,11 @@ storyboard-generator/
         ├── index.js
         └── App.jsx
 ```
+
+⚠️ **`server/assets/` debe subirse tal cual (son binarios PNG, ~1.3 MB en total).**
+Es la librería de iconos y los fondos degradado que usa el renderer v2.0 —
+si falta esta carpeta, el PPT se genera sin iconos ni fondos de portada/cierre
+(usa un color plano de respaldo, pero no fallará).
 
 ---
 
