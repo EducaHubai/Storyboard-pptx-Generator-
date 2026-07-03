@@ -2,7 +2,7 @@
  * Storyboard Generator — unified server
  *
  * Serves the React frontend (built static files) AND the API endpoints
- * from the same Express app / same port, so EasyPanel only needs to run
+ * from the same Express app / same port, so Coolify only needs to run
  * ONE service.
  *
  *   POST /api/upload-pdf      → PDF in, storyboard JSON out
@@ -63,7 +63,7 @@ const PDF_TO_PLAN_PROMPT = fs.readFileSync(
 );
 
 // ────────────────────────────────────────────────────────────
-// Health check — useful for EasyPanel / uptime monitors
+// Health check — useful for Coolify / uptime monitors
 // ────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, openaiConfigured: Boolean(process.env.OPENAI_API_KEY) });
