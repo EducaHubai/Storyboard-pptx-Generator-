@@ -1,21 +1,21 @@
-# Cómo desplegar — GitHub + EasyPanel
+# Cómo desplegar — GitHub + Coolify
 
-Esta guía asume que ya tienes acceso a GitHub y a EasyPanel en EDUCA EDTECH.
+Esta guía asume que ya tienes acceso a GitHub y a Coolify en EDUCA EDTECH.
 Todo el proyecto (frontend + backend) se despliega como **un solo servicio
 Docker**.
 
 ---
 
-## 0. Conseguir la API key de Anthropic (obligatorio)
+## 0. Conseguir la API key de OpenAI (obligatorio)
 
 El backend llama a **Claude**, no a ChatGPT — necesitas una key distinta.
 
-1. Ve a **console.anthropic.com**
+1. Ve a **platform.openai.com**
 2. Crea una cuenta de organización (o únete a la de EDUCA EDTECH si ya existe)
 3. **Settings → API Keys → Create Key**
-4. Copia la key (empieza por `sk-ant-...`) — la necesitarás en el paso 3
+4. Copia la key (empieza por `sk-...`) — la necesitarás en el paso 3
 
-Anthropic da algo de crédito gratuito al crear la cuenta; para uso real de
+OpenAI da algo de crédito gratuito al crear la cuenta; para uso real de
 equipo conviene cargar saldo en **Settings → Billing**.
 
 ---
@@ -62,13 +62,13 @@ storyboard-generator/
 
 ---
 
-## 2. Crear el servicio en EasyPanel
+## 2. Crear el servicio en Coolify
 
-1. Entra a tu instancia de EasyPanel
+1. Entra a tu instancia de Coolify
 2. **Create → App** (o "Service" según la versión)
 3. Elige **Source: GitHub** y conecta/selecciona el repo
    `storyboard-generator`, rama `main`
-4. **Build method: Dockerfile** — EasyPanel detectará el `Dockerfile` en la
+4. **Build method: Dockerfile** — Coolify detectará el `Dockerfile` en la
    raíz automáticamente
 5. **Port: 3000** (coincide con `EXPOSE 3000` del Dockerfile y con
    `PORT=3000` por defecto en `server/index.js`)
@@ -77,11 +77,11 @@ storyboard-generator/
 
 ## 3. Configurar la variable de entorno
 
-En la sección **Environment** del servicio en EasyPanel, añade:
+En la sección **Environment** del servicio en Coolify, añade:
 
 | Variable | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` | tu key de console.anthropic.com (`sk-ant-...`) |
+| `OPENAI_API_KEY` | tu key de platform.openai.com (`sk-...`) |
 
 Esto es lo único que necesita configuración manual — todo lo demás está
 ya resuelto en el código.
@@ -90,23 +90,23 @@ ya resuelto en el código.
 
 ## 4. Dominio
 
-EasyPanel suele asignar un subdominio automático (algo como
-`storyboard-generator.tu-dominio.easypanel.host`), o puedes apuntar un
+Coolify suele asignar un subdominio automático (algo como
+`storyboard-generator.tu-dominio.coolify.host`), o puedes apuntar un
 dominio propio (`storyboard.educaedtech.com`) desde **Domains** en el panel
-del servicio, con el DNS apuntando a tu servidor EasyPanel.
+del servicio, con el DNS apuntando a tu servidor Coolify.
 
 ---
 
 ## 5. Deploy
 
-Pulsa **Deploy**. EasyPanel:
+Pulsa **Deploy**. Coolify:
 1. Clona el repo
 2. Construye la imagen Docker (compila el React, instala las dependencias
    del backend)
 3. Levanta el contenedor en el puerto configurado
 
 La primera build tarda 2-4 minutos. Verás los logs en tiempo real dentro
-de EasyPanel — si algo falla, ahí aparecerá el error exacto (normalmente
+de Coolify — si algo falla, ahí aparecerá el error exacto (normalmente
 faltará la variable de entorno o habrá un typo en algún `package.json`).
 
 ---
@@ -116,11 +116,11 @@ faltará la variable de entorno o habrá un typo en algún `package.json`).
 Visita `https://tu-dominio/api/health` — debería devolver:
 
 ```json
-{ "ok": true, "anthropicConfigured": true }
+{ "ok": true, "openaiConfigured": true }
 ```
 
-Si `anthropicConfigured` sale en `false`, revisa que la variable
-`ANTHROPIC_API_KEY` esté bien guardada en EasyPanel y vuelve a desplegar
+Si `openaiConfigured` sale en `false`, revisa que la variable
+`OPENAI_API_KEY` esté bien guardada en Coolify y vuelve a desplegar
 (algunos paneles requieren un "Redeploy" después de cambiar env vars).
 
 Luego visita `https://tu-dominio/` directamente — deberías ver la pantalla
@@ -131,7 +131,7 @@ funciona: storyboard generado → selección de gráficos → descarga del .pptx
 
 ## Actualizaciones futuras
 
-Cada vez que hagas `git push` a `main`, puedes configurar EasyPanel para
+Cada vez que hagas `git push` a `main`, puedes configurar Coolify para
 re-desplegar automáticamente (webhook de GitHub), o hacerlo manualmente
 pulsando **Deploy** de nuevo en el panel.
 
@@ -141,8 +141,8 @@ pulsando **Deploy** de nuevo en el panel.
 
 | Síntoma | Causa probable |
 |---|---|
-| Build falla en EasyPanel | Revisa los logs — normalmente falta un archivo o hay un typo en `package.json` |
-| La web carga pero "Failed to fetch" al subir PDF | `ANTHROPIC_API_KEY` no configurada o el deploy no se refrescó tras añadirla |
-| `/api/health` da 404 | El servicio no está sirviendo bien — revisa que el puerto en EasyPanel coincida con el `EXPOSE 3000` del Dockerfile |
+| Build falla en Coolify | Revisa los logs — normalmente falta un archivo o hay un typo en `package.json` |
+| La web carga pero "Failed to fetch" al subir PDF | `OPENAI_API_KEY` no configurada o el deploy no se refrescó tras añadirla |
+| `/api/health` da 404 | El servicio no está sirviendo bien — revisa que el puerto en Coolify coincida con el `EXPOSE 3000` del Dockerfile |
 | El storyboard sale en inglés "raro" o mal formateado | Revisa `server/system-prompt-upload-pdf.md` — puedes editarlo directamente en el repo para ajustar el tono o el idioma por defecto |
 | pptx con gráficos en blanco | Los 10 tipos de gráfico no están todos implementados todavía en `server/index.js` (`renderGraphic`) — `before_after`, `smart_grid` y `data_table` ya funcionan; el resto hay que portarlos siguiendo el mismo patrón (pide ayuda si necesitas que los complete) |

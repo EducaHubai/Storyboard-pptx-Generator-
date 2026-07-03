@@ -28,7 +28,7 @@ if (!process.env.OPENAI_API_KEY) {
 }
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function callClaude(systemPrompt, userContent, maxTokens = 4000) {
+async function callOpenAI(systemPrompt, userContent, maxTokens = 4000) {
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: maxTokens,
@@ -66,7 +66,7 @@ const PDF_TO_PLAN_PROMPT = fs.readFileSync(
 // Health check — useful for EasyPanel / uptime monitors
 // ────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, anthropicConfigured: Boolean(process.env.OPENAI_API_KEY) });
+  res.json({ ok: true, openaiConfigured: Boolean(process.env.OPENAI_API_KEY) });
 });
 
 app.get("/api/test-openai", async (req, res) => {
@@ -102,7 +102,7 @@ app.post("/api/upload-pdf", upload.single("pdf"), async (req, res) => {
       "<insert contents of storyboard.schema.json here>",
       SCHEMA
     );
-    const raw = await callClaude(
+    const raw = await callOpenAI(
       systemWithSchema,
       `Generate the storyboard JSON for this course unit:\n\n${pdfText.slice(0, 14000)}`,
       8000
@@ -177,7 +177,7 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
     const { text: pdfText } = await pdfParse(pdfBuffer);
     fs.unlink(req.file.path, () => {});
 
-    const raw = await callClaude(
+    const raw = await callOpenAI(
       PDF_TO_PLAN_PROMPT,
       `Here is the full content of the course unit:\n\n${pdfText.slice(0, 14000)}\n\nExtract the unit content and generate the slide plan JSON.`
     );
@@ -212,7 +212,7 @@ app.post("/api/ppt-plan", async (req, res) => {
       ...epigraphs.map((e, i) => `${i + 1}. ${e}`),
     ].filter(Boolean).join("\n");
 
-    const raw = await callClaude(PPT_PLAN_PROMPT, userMessage);
+    const raw = await callOpenAI(PPT_PLAN_PROMPT, userMessage);
     const plan = JSON.parse(raw);
     res.json(plan);
   } catch (err) {
@@ -236,7 +236,7 @@ app.post("/api/ppt-generate", async (req, res) => {
     }
 
     // Step 1: generate scripts + EducaLab metadata via Claude
-    const raw = await callClaude(
+    const raw = await callOpenAI(
       PPT_GENERATE_PROMPT,
       `Generate the avatar script and EducaLab metadata for this approved slide plan:\n\n${JSON.stringify(plan, null, 2)}`,
       6000
