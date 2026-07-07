@@ -17,6 +17,7 @@ const path = require("path");
 const OpenAI = require("openai");
 const pdfParse = require("pdf-parse");
 const pptxgen = require("pptxgenjs");
+const JSZip = require("jszip");
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -61,6 +62,18 @@ const PDF_TO_PLAN_PROMPT = fs.readFileSync(
   path.join(__dirname, "system-prompt-pdf-to-plan.md"),
   "utf-8"
 );
+
+// Brand fonts (Rubik, Lato — OFL licensed) embedded into generated .pptx
+// files so headings/body render correctly on machines that don't have
+// them installed (§6.4 of the manual), instead of silently falling back
+// to a substitute font.
+const FONTS_DIR = path.join(__dirname, "fonts");
+const BRAND_FONTS = [
+  { typeface: "Rubik", style: "regular", file: "Rubik-Regular.ttf" },
+  { typeface: "Rubik", style: "bold", file: "Rubik-Bold.ttf" },
+  { typeface: "Lato", style: "regular", file: "Lato-Regular.ttf" },
+  { typeface: "Lato", style: "bold", file: "Lato-Bold.ttf" },
+].map((f) => ({ ...f, buffer: fs.readFileSync(path.join(FONTS_DIR, f.file)) }));
 
 // ────────────────────────────────────────────────────────────
 // Health check — useful for Coolify / uptime monitors
@@ -261,12 +274,20 @@ app.post("/api/ppt-generate", async (req, res) => {
     const outPath = `/tmp/ppt-${Date.now()}.pptx`;
     await pres.writeFile({ fileName: outPath });
 
+    try {
+      await embedFonts(outPath);
+    } catch (fontErr) {
+      // Non-fatal: deliver the pptx with fontFace names set but not
+      // embedded rather than failing the whole request.
+      console.warn("embedFonts failed, shipping pptx without embedded fonts:", fontErr.message);
+    }
+
     // Step 3: send pptx as download + metadata in header
     const metaHeader = Buffer.from(JSON.stringify(generated.educalab || {})).toString("base64");
     const scriptHeader = Buffer.from(JSON.stringify(generated.slides || [])).toString("base64");
     res.setHeader("X-Educalab-Meta", metaHeader);
     res.setHeader("X-Script-Data", scriptHeader);
-    res.download(outPath, `${slugify(plan.unit || "ppt")}.pptx`, () => {
+    res.download(outPath, `${buildUnitFileName(plan)}.pptx`, () => {
       fs.unlink(outPath, () => {});
     });
   } catch (err) {
@@ -345,8 +366,98 @@ function renderGraphic(slide, type, data, box) {
       break;
     }
 
+    case "text_only":
+      slide.addText(data.text || "", {
+        x: box.x, y: box.y, w: box.w, h: box.h,
+        fontFace: "Lato", fontSize: 13, color: "202020", align: "center", valign: "middle",
+      });
+      break;
+
+    case "three_node_sequence": {
+      const nodes = data.nodes || [];
+      const n = Math.max(nodes.length, 1);
+      const slotW = box.w / n;
+      const nodeW = slotW - 0.18;
+      nodes.forEach((label, i) => {
+        const x = box.x + i * slotW;
+        slide.addShape("roundRect", {
+          x, y: box.y + box.h / 2 - 0.35, w: nodeW, h: 0.7, rectRadius: 0.06,
+          fill: { color: "244A80" }, line: { color: "244A80" },
+        });
+        slide.addText(label, {
+          x, y: box.y + box.h / 2 - 0.35, w: nodeW, h: 0.7,
+          fontFace: "Lato", fontSize: 11, color: "FFFFFF", align: "center", valign: "middle",
+        });
+        if (i < n - 1) {
+          slide.addText("→", {
+            x: x + nodeW, y: box.y + box.h / 2 - 0.25, w: slotW - nodeW, h: 0.5,
+            fontSize: 16, color: "963058", align: "center", valign: "middle",
+          });
+        }
+      });
+      break;
+    }
+
+    case "numbered_list": {
+      const items = data.items || [];
+      const rowH = box.h / Math.max(items.length, 1);
+      items.forEach((text, i) => {
+        const y = box.y + i * rowH;
+        slide.addShape("ellipse", {
+          x: box.x, y: y + rowH / 2 - 0.18, w: 0.36, h: 0.36,
+          fill: { color: "2E7ABE" }, line: { color: "2E7ABE" },
+        });
+        slide.addText(String(i + 1), {
+          x: box.x, y: y + rowH / 2 - 0.18, w: 0.36, h: 0.36,
+          fontFace: "Rubik", fontSize: 13, bold: true, color: "FFFFFF", align: "center", valign: "middle",
+        });
+        slide.addText(text, {
+          x: box.x + 0.5, y, w: box.w - 0.5, h: rowH,
+          fontFace: "Lato", fontSize: 12, color: "202020", valign: "middle",
+        });
+      });
+      break;
+    }
+
+    case "validation_flow": {
+      const steps = data.steps || [];
+      const rowH = box.h / Math.max(steps.length, 1);
+      steps.forEach((text, i) => {
+        const y = box.y + i * rowH;
+        slide.addText("✓", {
+          x: box.x, y, w: 0.4, h: rowH,
+          fontSize: 16, bold: true, color: "60BFB8", align: "center", valign: "middle",
+        });
+        slide.addText(text, {
+          x: box.x + 0.45, y, w: box.w - 0.45, h: rowH,
+          fontFace: "Lato", fontSize: 12, color: "202020", valign: "middle",
+        });
+      });
+      break;
+    }
+
+    case "pillar_columns": {
+      const cols = data.columns || [];
+      const n = Math.max(cols.length, 1);
+      const slotW = box.w / n;
+      const colW = slotW - 0.1;
+      cols.forEach((col, i) => {
+        const x = box.x + i * slotW;
+        slide.addShape("rect", { x, y: box.y, w: colW, h: box.h, fill: { color: "F0F0F0" }, line: { color: "E0E0E0" } });
+        slide.addText(col.title || "", {
+          x: x + 0.08, y: box.y + 0.1, w: colW - 0.16, h: 0.4,
+          fontFace: "Rubik", fontSize: 11, bold: true, color: "963058", align: "center",
+        });
+        slide.addText(col.text || "", {
+          x: x + 0.08, y: box.y + 0.55, w: colW - 0.16, h: box.h - 0.65,
+          fontFace: "Lato", fontSize: 10, color: "202020", align: "center",
+        });
+      });
+      break;
+    }
+
     default:
-      break; // text_only / none / and the remaining graphic types to implement
+      break; // none / blooms_bars / prompt_window — unused by the active PPT+Script flow
   }
 }
 
@@ -360,14 +471,20 @@ const SECTION_CONFIG = {
   cierre:       { bg: "E96A73", accentColor: "E96A73", darkBg: true,  label: null },
 };
 
-// Gradient stops for the brand accent bar (teal→blue-m→blue-d→burdeos→rosa)
-const GRADIENT_STOPS = [
-  { position: 0,   color: "60BFB8" },
-  { position: 25,  color: "2E7ABE" },
-  { position: 50,  color: "244A80" },
-  { position: 80,  color: "963058" },
-  { position: 100, color: "E96A73" },
-];
+// Brand gradient stops (teal→blue-m→blue-d→burdeos→rosa). pptxgenjs has no
+// native multi-stop gradient fill (unresolved upstream since 2017), so the
+// bar is approximated with adjacent solid segments in this exact order.
+const GRADIENT_STOPS = ["60BFB8", "2E7ABE", "244A80", "963058", "E96A73"];
+
+function addBrandGradientBar(slide, y, h) {
+  const segW = 10 / GRADIENT_STOPS.length;
+  GRADIENT_STOPS.forEach((color, i) => {
+    slide.addShape("rect", {
+      x: i * segW, y, w: segW, h,
+      fill: { color }, line: { color },
+    });
+  });
+}
 
 function renderCorporateSlide(slide, slideData, _script) {
   const cfg = SECTION_CONFIG[slideData.section] || SECTION_CONFIG.conceptos;
@@ -413,10 +530,7 @@ function renderCorporateSlide(slide, slideData, _script) {
     }
 
     // Brand gradient bar at bottom
-    slide.addShape("rect", {
-      x: 0, y: 5.43, w: 10, h: 0.2,
-      fill: { type: "solid", color: "60BFB8" }, line: { color: "60BFB8" },
-    });
+    addBrandGradientBar(slide, 5.43, 0.2);
   } else {
     // Light background slides: left accent bar + title in accent color + bullets
     // Left accent bar
@@ -447,7 +561,11 @@ function renderCorporateSlide(slide, slideData, _script) {
       fill: { color: "E0E0E0" }, line: { color: "E0E0E0" },
     });
 
-    // Bullets
+    // Bullets — narrower column when a graphic panel occupies the right side
+    const graphicType = slideData.graphicType && slideData.graphicType !== "none" ? slideData.graphicType : null;
+    const legacyGraphicText = !graphicType && slideData.graphic && slideData.graphic !== "none" ? slideData.graphic : null;
+    const hasGraphic = Boolean(graphicType || legacyGraphicText);
+    const bulletW = hasGraphic ? 5.7 : 9.06;
     const bulletY = 1.7;
     const bulletSpacing = bullets.length <= 2 ? 1.1 : 0.9;
     bullets.forEach((bullet, i) => {
@@ -457,29 +575,128 @@ function renderCorporateSlide(slide, slideData, _script) {
         fill: { color: cfg.accentColor }, line: { color: cfg.accentColor },
       });
       slide.addText(bullet, {
-        x: 0.58, y: bulletY + i * bulletSpacing, w: 9.06, h: bulletSpacing - 0.05,
+        x: 0.58, y: bulletY + i * bulletSpacing, w: bulletW, h: bulletSpacing - 0.05,
         fontFace: "Lato", fontSize: 18, color: "202020", valign: "middle",
       });
     });
 
-    // Graphic hint if provided (as a caption at bottom)
-    if (slideData.graphic && slideData.graphic !== "none") {
-      slide.addText(`[Graphic: ${slideData.graphic}]`, {
-        x: 0.36, y: 5.1, w: 9.3, h: 0.3,
-        fontFace: "Lato", fontSize: 10, color: "BABABA", italics: true,
+    // Graphic — rendered inside a solid panel per §6.5 (never floating
+    // without a container). Placed to the right of the bullet column.
+    if (hasGraphic) {
+      const panelX = 6.3, panelY = 1.7, panelW = 3.3, panelH = 3.4;
+      slide.addShape("roundRect", {
+        x: panelX, y: panelY, w: panelW, h: panelH,
+        rectRadius: 0.08,
+        fill: { color: "F5F5F5" },
+        line: { color: "E0E0E0", width: 1 },
       });
+      const innerBox = { x: panelX + 0.25, y: panelY + 0.25, w: panelW - 0.5, h: panelH - 0.5 };
+      if (graphicType) {
+        renderGraphic(slide, graphicType, slideData.graphicData || {}, innerBox);
+      } else {
+        // Backward-compat: older plans only carry a free-text hint string.
+        slide.addText(legacyGraphicText, {
+          ...innerBox, fontFace: "Lato", fontSize: 12, color: cfg.accentColor,
+          italics: true, align: "center", valign: "middle",
+        });
+      }
     }
 
     // Brand gradient bar at bottom
-    slide.addShape("rect", {
-      x: 0, y: 5.43, w: 10, h: 0.2,
-      fill: { type: "solid", color: "60BFB8" }, line: { color: "60BFB8" },
-    });
+    addBrandGradientBar(slide, 5.43, 0.2);
   }
+}
+
+// Embed Rubik/Lato into a generated .pptx so the brand typography (§6.4)
+// renders correctly even on machines without those fonts installed.
+// pptxgenjs only writes the fontFace *name* into the XML — it never
+// embeds the actual font binary — so this post-processes the .pptx zip
+// per the OOXML "embedded fonts" spec (ECMA-376 §19.2.1.22 embeddedFontLst).
+async function embedFonts(pptxPath) {
+  const zip = await JSZip.loadAsync(fs.readFileSync(pptxPath));
+
+  const contentTypesPath = "[Content_Types].xml";
+  const presentationPath = "ppt/presentation.xml";
+  const relsPath = "ppt/_rels/presentation.xml.rels";
+
+  let contentTypes = await zip.file(contentTypesPath).async("string");
+  let presentation = await zip.file(presentationPath).async("string");
+  let rels = await zip.file(relsPath).async("string");
+
+  // 1. Declare the .fntdata extension if not already declared.
+  if (!contentTypes.includes('Extension="fntdata"')) {
+    contentTypes = contentTypes.replace(
+      "</Types>",
+      '<Default Extension="fntdata" ContentType="application/x-fontdata"/></Types>'
+    );
+  }
+
+  // 2. Add a relationship + font part for each embedded font file, and
+  //    remember the rId assigned to each so presentation.xml can point to it.
+  const existingIds = [...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]));
+  let nextId = (existingIds.length ? Math.max(...existingIds) : 0) + 1;
+
+  const withRelIds = BRAND_FONTS.map((font, i) => {
+    const rId = `rId${nextId + i}`;
+    const partName = `font${nextId + i}.fntdata`;
+    zip.file(`ppt/fonts/${partName}`, font.buffer);
+    rels = rels.replace(
+      "</Relationships>",
+      `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" Target="fonts/${partName}"/></Relationships>`
+    );
+    return { ...font, rId };
+  });
+
+  // 3. Mark the presentation as using embedded fonts, and list them —
+  //    grouped by typeface, one <p:embeddedFont> per family with
+  //    <p:regular>/<p:bold> children pointing at the relationship ids.
+  if (!/embedTrueTypeFonts=/.test(presentation)) {
+    presentation = presentation.replace(
+      /<p:presentation /,
+      '<p:presentation embedTrueTypeFonts="1" '
+    );
+  }
+
+  const byTypeface = {};
+  withRelIds.forEach((f) => {
+    byTypeface[f.typeface] = byTypeface[f.typeface] || {};
+    byTypeface[f.typeface][f.style] = f.rId;
+  });
+  const embeddedFontLst =
+    "<p:embeddedFontLst>" +
+    Object.entries(byTypeface)
+      .map(([typeface, styles]) => {
+        const children = Object.entries(styles)
+          .map(([style, rId]) => `<p:${style} r:id="${rId}"/>`)
+          .join("");
+        return `<p:embeddedFont><p:font typeface="${typeface}"/>${children}</p:embeddedFont>`;
+      })
+      .join("") +
+    "</p:embeddedFontLst>";
+
+  if (/<p:notesSz\b[^/]*\/>/.test(presentation)) {
+    presentation = presentation.replace(/(<p:notesSz\b[^/]*\/>)/, `$1${embeddedFontLst}`);
+  } else {
+    // Fallback: schema also allows it right before defaultTextStyle/extLst.
+    presentation = presentation.replace("</p:presentation>", `${embeddedFontLst}</p:presentation>`);
+  }
+
+  zip.file(contentTypesPath, contentTypes);
+  zip.file(presentationPath, presentation);
+  zip.file(relsPath, rels);
+
+  const outBuffer = await zip.generateAsync({ type: "nodebuffer" });
+  fs.writeFileSync(pptxPath, outBuffer);
 }
 
 function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+// File naming convention (manual §13): MC-[AFO]-[Unidad], e.g. "MC-MarketingDigital-U2"
+function buildUnitFileName(plan) {
+  const clean = (s) => (s || "").replace(/[^a-zA-Z0-9]+/g, "");
+  return `MC-${clean(plan.afo) || "AFO"}-${clean(plan.unit) || "Unidad"}`;
 }
 
 // ────────────────────────────────────────────────────────────

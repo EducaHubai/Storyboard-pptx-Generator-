@@ -40,9 +40,28 @@ Return ONLY valid JSON, no markdown fences, no explanation. Schema:
       "title": "string",
       "subtitle": "string or null",
       "bullets": [],
-      "graphic": "string — brief description of a suggested visual, or 'none'"
+      "graphicType": "string — one of the values below, or 'none'",
+      "graphicData": {}
     }
   ]
 }
 
 Valid section values: "title", "entrada", "conceptos", "puntos_clave", "resumen", "cierre"
+
+## Graphics — pick the type that best fits the slide's content
+
+Only use these types (rendered natively as PowerPoint shapes — no images, no cost, brand-exact colors). Pick "none" if a slide genuinely needs no visual (e.g. title, most resumen/cierre slides).
+
+| graphicType | When to use | graphicData shape |
+|---|---|---|
+| `none` | No visual needed | `{}` |
+| `text_only` | One short standalone phrase worth isolating | `{ "text": "short phrase" }` |
+| `three_node_sequence` | A 2–4 step process or before→after→result flow | `{ "nodes": ["Step one", "Step two", "Step three"] }` |
+| `numbered_list` | 2–5 sequential items where order matters | `{ "items": ["First item", "Second item"] }` |
+| `validation_flow` | 2–5 checklist-style steps (things completed/validated) | `{ "steps": ["Draft", "Review", "Approve"] }` |
+| `pillar_columns` | 2–4 parallel concepts/pillars shown side by side | `{ "columns": [{ "title": "Pillar A", "text": "short description" }] }` |
+| `before_after` | A contrast between two states | `{ "beforeLabel": "Before", "beforeText": "...", "afterLabel": "After", "afterText": "..." }` |
+| `smart_grid` | 4–6 short labeled items in a grid, one highlighted | `{ "items": [{ "letter": "S", "word": "Specific" }], "highlightLetter": "S" }` |
+| `data_table` | Tabular data with 2+ columns | `{ "columns": ["Col A", "Col B"], "rows": [["a1", "b1"]] }` |
+
+Use graphics mainly on conceptos and puntos_clave slides. Keep every label short (2–5 words) since it renders on-screen while the avatar speaks.
