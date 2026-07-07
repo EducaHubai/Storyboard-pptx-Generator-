@@ -10,6 +10,13 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
+# Python + python-pptx — used by server/render_ppt.py to build the
+# corporate PPT with real gradient fills (pptxgenjs has no native
+# multi-stop gradient support).
+RUN apk add --no-cache python3 py3-pip
+COPY server/requirements.txt ./server/
+RUN pip3 install --no-cache-dir --break-system-packages -r server/requirements.txt
+
 # Install server dependencies
 COPY server/package.json ./server/
 RUN cd server && npm install --omit=dev

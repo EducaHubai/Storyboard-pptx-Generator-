@@ -18,6 +18,12 @@ const OpenAI = require("openai");
 const pdfParse = require("pdf-parse");
 const pptxgen = require("pptxgenjs");
 const JSZip = require("jszip");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const execFileAsync = promisify(execFile);
+
+const RENDER_PPT_SCRIPT = path.join(__dirname, "render_ppt.py");
+const PYTHON_BIN = process.env.PYTHON_BIN || "python3";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -256,23 +262,16 @@ app.post("/api/ppt-generate", async (req, res) => {
     );
     const generated = JSON.parse(raw);
 
-    // Step 2: build .pptx
-    const pres = new pptxgen();
-    pres.layout = "LAYOUT_16x9";
-    pres.title = plan.unit;
-
-    // Merge plan slides with generated scripts
-    plan.slides.forEach((slideData) => {
-      const scriptData = (generated.slides || []).find((s) => s.n === slideData.n) || {};
-      const slide = pres.addSlide();
-      renderCorporateSlide(slide, slideData, scriptData.script || "");
-      slide.addNotes(
-        [scriptData.script, scriptData.productionNotes].filter(Boolean).join("\n\n---\n")
-      );
-    });
-
+    // Step 2: build .pptx via the Python renderer (python-pptx supports
+    // real multi-stop gradients, which pptxgenjs does not).
+    const inputPath = `/tmp/ppt-input-${Date.now()}.json`;
     const outPath = `/tmp/ppt-${Date.now()}.pptx`;
-    await pres.writeFile({ fileName: outPath });
+    fs.writeFileSync(inputPath, JSON.stringify({ plan, scripts: generated.slides || [] }));
+    try {
+      await execFileAsync(PYTHON_BIN, [RENDER_PPT_SCRIPT, inputPath, outPath]);
+    } finally {
+      fs.unlink(inputPath, () => {});
+    }
 
     try {
       await embedFonts(outPath);
@@ -458,152 +457,6 @@ function renderGraphic(slide, type, data, box) {
 
     default:
       break; // none / blooms_bars / prompt_window — unused by the active PPT+Script flow
-  }
-}
-
-// Corporate PPT slide renderer — EDUCA EDTECH Group design system
-const SECTION_CONFIG = {
-  title:        { bg: "60BFB8", accentColor: "60BFB8", darkBg: true,  label: null },
-  entrada:      { bg: "FFFFFF", accentColor: "60BFB8", darkBg: false, label: "Introduction" },
-  conceptos:    { bg: "FFFFFF", accentColor: "244A80", darkBg: false, label: "Key Concepts" },
-  puntos_clave: { bg: "FFFFFF", accentColor: "2E7ABE", darkBg: false, label: "Key Points" },
-  resumen:      { bg: "963058", accentColor: "963058", darkBg: true,  label: null },
-  cierre:       { bg: "E96A73", accentColor: "E96A73", darkBg: true,  label: null },
-};
-
-// Brand gradient stops (teal→blue-m→blue-d→burdeos→rosa). pptxgenjs has no
-// native multi-stop gradient fill (unresolved upstream since 2017), so the
-// bar is approximated with adjacent solid segments in this exact order.
-const GRADIENT_STOPS = ["60BFB8", "2E7ABE", "244A80", "963058", "E96A73"];
-
-function addBrandGradientBar(slide, y, h) {
-  const segW = 10 / GRADIENT_STOPS.length;
-  GRADIENT_STOPS.forEach((color, i) => {
-    slide.addShape("rect", {
-      x: i * segW, y, w: segW, h,
-      fill: { color }, line: { color },
-    });
-  });
-}
-
-function renderCorporateSlide(slide, slideData, _script) {
-  const cfg = SECTION_CONFIG[slideData.section] || SECTION_CONFIG.conceptos;
-  const bullets = (slideData.bullets || []).slice(0, 3);
-  const title = slideData.title || "";
-  const subtitle = slideData.subtitle || null;
-
-  slide.background = { color: cfg.bg };
-
-  if (cfg.darkBg) {
-    // Colored background slides: centered white text + gradient bar at bottom
-    // Top accent strip (thin white line)
-    slide.addShape("rect", {
-      x: 0, y: 0, w: 10, h: 0.06,
-      fill: { color: "FFFFFF" }, line: { color: "FFFFFF" },
-    });
-
-    // Title
-    slide.addText(title, {
-      x: 0.8, y: 1.4, w: 8.4, h: 1.8,
-      fontFace: "Rubik", fontSize: 38, bold: false,
-      color: "FFFFFF", align: "center", valign: "middle",
-    });
-
-    // Subtitle (only title slide)
-    if (subtitle) {
-      slide.addText(subtitle, {
-        x: 0.8, y: 3.2, w: 8.4, h: 0.7,
-        fontFace: "Lato", fontSize: 18, color: "FFFFFF",
-        align: "center", transparency: 20,
-      });
-    }
-
-    // Bullets on colored slides (resumen / cierre)
-    if (bullets.length > 0) {
-      bullets.forEach((bullet, i) => {
-        slide.addText(`• ${bullet}`, {
-          x: 1.5, y: 2.8 + i * 0.72, w: 7, h: 0.65,
-          fontFace: "Lato", fontSize: 18, color: "FFFFFF",
-          align: "center",
-        });
-      });
-    }
-
-    // Brand gradient bar at bottom
-    addBrandGradientBar(slide, 5.43, 0.2);
-  } else {
-    // Light background slides: left accent bar + title in accent color + bullets
-    // Left accent bar
-    slide.addShape("rect", {
-      x: 0, y: 0, w: 0.14, h: 5.63,
-      fill: { color: cfg.accentColor }, line: { color: cfg.accentColor },
-    });
-
-    // Section eyebrow label
-    if (cfg.label) {
-      slide.addText(cfg.label.toUpperCase(), {
-        x: 0.36, y: 0.2, w: 9.3, h: 0.32,
-        fontFace: "Lato", fontSize: 10, bold: true, color: cfg.accentColor,
-        charSpacing: 2,
-      });
-    }
-
-    // Title
-    slide.addText(title, {
-      x: 0.36, y: 0.52, w: 9.3, h: 1.0,
-      fontFace: "Rubik", fontSize: 28, bold: false,
-      color: cfg.accentColor,
-    });
-
-    // Hairline divider
-    slide.addShape("rect", {
-      x: 0.36, y: 1.52, w: 9.28, h: 0.018,
-      fill: { color: "E0E0E0" }, line: { color: "E0E0E0" },
-    });
-
-    // Bullets — narrower column when a graphic panel occupies the right side
-    const graphicType = slideData.graphicType && slideData.graphicType !== "none" ? slideData.graphicType : null;
-    const legacyGraphicText = !graphicType && slideData.graphic && slideData.graphic !== "none" ? slideData.graphic : null;
-    const hasGraphic = Boolean(graphicType || legacyGraphicText);
-    const bulletW = hasGraphic ? 5.7 : 9.06;
-    const bulletY = 1.7;
-    const bulletSpacing = bullets.length <= 2 ? 1.1 : 0.9;
-    bullets.forEach((bullet, i) => {
-      // Accent square marker
-      slide.addShape("rect", {
-        x: 0.36, y: bulletY + i * bulletSpacing + 0.27, w: 0.07, h: 0.07,
-        fill: { color: cfg.accentColor }, line: { color: cfg.accentColor },
-      });
-      slide.addText(bullet, {
-        x: 0.58, y: bulletY + i * bulletSpacing, w: bulletW, h: bulletSpacing - 0.05,
-        fontFace: "Lato", fontSize: 18, color: "202020", valign: "middle",
-      });
-    });
-
-    // Graphic — rendered inside a solid panel per §6.5 (never floating
-    // without a container). Placed to the right of the bullet column.
-    if (hasGraphic) {
-      const panelX = 6.3, panelY = 1.7, panelW = 3.3, panelH = 3.4;
-      slide.addShape("roundRect", {
-        x: panelX, y: panelY, w: panelW, h: panelH,
-        rectRadius: 0.08,
-        fill: { color: "F5F5F5" },
-        line: { color: "E0E0E0", width: 1 },
-      });
-      const innerBox = { x: panelX + 0.25, y: panelY + 0.25, w: panelW - 0.5, h: panelH - 0.5 };
-      if (graphicType) {
-        renderGraphic(slide, graphicType, slideData.graphicData || {}, innerBox);
-      } else {
-        // Backward-compat: older plans only carry a free-text hint string.
-        slide.addText(legacyGraphicText, {
-          ...innerBox, fontFace: "Lato", fontSize: 12, color: cfg.accentColor,
-          italics: true, align: "center", valign: "middle",
-        });
-      }
-    }
-
-    // Brand gradient bar at bottom
-    addBrandGradientBar(slide, 5.43, 0.2);
   }
 }
 

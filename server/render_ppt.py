@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+"""
+Corporate PPT renderer — EDUCA EDTECH Group design system.
+
+Replaces the pptxgenjs-based renderCorporateSlide() for the PPT+Script
+flow. Reason: pptxgenjs has no native multi-stop gradient fill (open
+upstream issue since 2017), so the brand gradient (§6.2/§6.3 of the
+manual) could only be approximated with solid segments. python-pptx
+exposes the underlying DrawingML <a:gsLst> directly, so we can write the
+real 5-stop brand gradient.
+
+Usage: python3 render_ppt.py <input.json> <output.pptx>
+
+input.json shape: { "plan": {...slide plan...}, "scripts": [...generated
+script/productionNotes per slide, keyed by "n"...] }
+
+Font embedding is NOT done here — server/index.js post-processes the
+resulting .pptx (embedFonts()) regardless of which renderer produced it.
+"""
+import json
+import sys
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.oxml.ns import qn
+
+EMU_PER_IN = 914400
+SLIDE_W = 10.0
+SLIDE_H = 5.625
+
+# Brand gradient stops (teal -> blue-m -> blue-d -> burdeos -> rosa)
+GRADIENT_STOPS = [
+    (0, "60BFB8"),
+    (25000, "2E7ABE"),
+    (50000, "244A80"),
+    (80000, "963058"),
+    (100000, "E96A73"),
+]
+
+SECTION_CONFIG = {
+    "title":        {"bg": "60BFB8", "accent": "60BFB8", "dark": True,  "label": None,
+                      "gradient": True},
+    "entrada":      {"bg": "FFFFFF", "accent": "60BFB8", "dark": False, "label": "Introduction"},
+    "conceptos":    {"bg": "FFFFFF", "accent": "244A80", "dark": False, "label": "Key Concepts"},
+    "puntos_clave": {"bg": "FFFFFF", "accent": "2E7ABE", "dark": False, "label": "Key Points"},
+    "resumen":      {"bg": "963058", "accent": "963058", "dark": True,  "label": None},
+    "cierre":       {"bg": "E96A73", "accent": "E96A73", "dark": True,  "label": None,
+                      "gradient": True},
+}
+
+
+def rgb(hex_color):
+    return RGBColor.from_string(hex_color)
+
+
+def set_gradient_fill(fill, stops=GRADIENT_STOPS, angle_deg=0):
+    """Write a real multi-stop DrawingML gradient (python-pptx's public
+    API only supports the default 2 stops — this manipulates the
+    underlying <a:gsLst> XML directly to add the rest)."""
+    fill.gradient()
+    grad_fill_el = fill._xPr.find(qn("a:gradFill"))
+    gs_lst = grad_fill_el.find(qn("a:gsLst"))
+    for child in list(gs_lst):
+        gs_lst.remove(child)
+    for pos, hex_color in stops:
+        gs = gs_lst.makeelement(qn("a:gs"), {"pos": str(pos)})
+        clr = gs.makeelement(qn("a:srgbClr"), {"val": hex_color})
+        gs.append(clr)
+        gs_lst.append(gs)
+    lin = grad_fill_el.find(qn("a:lin"))
+    if lin is not None:
+        lin.set("ang", str(angle_deg * 60000))
+
+
+def add_rect(slide, x, y, w, h, color, shape_type=MSO_SHAPE.RECTANGLE):
+    shp = slide.shapes.add_shape(shape_type, Inches(x), Inches(y), Inches(w), Inches(h))
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = rgb(color)
+    shp.line.fill.background()
+    shp.shadow.inherit = False
+    return shp
+
+
+def add_gradient_bar(slide, y, h):
+    shp = add_rect(slide, 0, y, SLIDE_W, h, "FFFFFF")
+    set_gradient_fill(shp.fill, angle_deg=0)
+
+
+def add_text(slide, x, y, w, h, text, font="Lato", size=14, bold=False, italic=False,
+             color="202020", align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, char_spacing=None):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    tf.margin_left = 0
+    tf.margin_right = 0
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    p = tf.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.name = font
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.italic = italic
+    run.font.color.rgb = rgb(color)
+    return box
+
+
+# ── Graphic renderers (mirrors server/index.js renderGraphic()) ────────
+def render_graphic(slide, gtype, data, box):
+    x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+
+    if gtype == "text_only":
+        add_text(slide, x, y, w, h, data.get("text", ""), font="Lato", size=13,
+                  italic=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+    elif gtype == "before_after":
+        add_text(slide, x, y, w, 1,
+                  f"{data.get('beforeLabel', 'Before')}: {data.get('beforeText', '')}",
+                  size=12, color="963058")
+        add_text(slide, x, y + 1.2, w, 1.2,
+                  f"{data.get('afterLabel', 'After')}: {data.get('afterText', '')}",
+                  size=12, color="202020")
+
+    elif gtype == "smart_grid":
+        items = data.get("items", [])
+        highlight = data.get("highlightLetter")
+        for i, item in enumerate(items):
+            col, row = i % 2, i // 2
+            cx = x + col * (w / 2)
+            cy = y + row * 0.9
+            is_hl = item.get("letter") == highlight
+            add_rect(slide, cx, cy, w / 2 - 0.05, 0.85, "963058" if is_hl else "F0F0F0")
+            add_text(slide, cx, cy, w / 2 - 0.05, 0.55, item.get("letter", ""),
+                      font="Rubik", size=22, bold=True,
+                      color="FFFFFF" if is_hl else "666666",
+                      align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+            add_text(slide, cx, cy + 0.55, w / 2 - 0.05, 0.3, item.get("word", ""),
+                      size=8, color="666666", align=PP_ALIGN.CENTER)
+
+    elif gtype == "data_table":
+        columns = data.get("columns", [])
+        rows = data.get("rows", [])
+        n_rows = len(rows) + 1
+        n_cols = max(len(columns), 1)
+        gfx = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(min(h, 0.4 * n_rows)))
+        table = gfx.table
+        for c, col_name in enumerate(columns):
+            cell = table.cell(0, c)
+            cell.text = str(col_name)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = rgb("202020")
+            run = cell.text_frame.paragraphs[0].runs[0]
+            run.font.bold = True
+            run.font.color.rgb = rgb("FFFFFF")
+            run.font.size = Pt(11)
+        for r, row_data in enumerate(rows):
+            for c, cell_val in enumerate(row_data):
+                cell = table.cell(r + 1, c)
+                cell.text = str(cell_val)
+                cell.text_frame.paragraphs[0].runs[0].font.size = Pt(11)
+
+    elif gtype == "three_node_sequence":
+        nodes = data.get("nodes", [])
+        n = max(len(nodes), 1)
+        slot_w = w / n
+        node_w = slot_w - 0.18
+        for i, label in enumerate(nodes):
+            nx = x + i * slot_w
+            ny = y + h / 2 - 0.35
+            add_rect(slide, nx, ny, node_w, 0.7, "244A80", MSO_SHAPE.ROUNDED_RECTANGLE)
+            add_text(slide, nx, ny, node_w, 0.7, label, size=11, color="FFFFFF",
+                      align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+            if i < n - 1:
+                add_text(slide, nx + node_w, y + h / 2 - 0.25, slot_w - node_w, 0.5, "→",
+                          size=16, color="963058", align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+    elif gtype == "numbered_list":
+        items = data.get("items", [])
+        row_h = h / max(len(items), 1)
+        for i, text in enumerate(items):
+            iy = y + i * row_h
+            add_rect(slide, x, iy + row_h / 2 - 0.18, 0.36, 0.36, "2E7ABE", MSO_SHAPE.OVAL)
+            add_text(slide, x, iy + row_h / 2 - 0.18, 0.36, 0.36, str(i + 1), font="Rubik",
+                      size=13, bold=True, color="FFFFFF", align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+            add_text(slide, x + 0.5, iy, w - 0.5, row_h, text, size=12, anchor=MSO_ANCHOR.MIDDLE)
+
+    elif gtype == "validation_flow":
+        steps = data.get("steps", [])
+        row_h = h / max(len(steps), 1)
+        for i, text in enumerate(steps):
+            iy = y + i * row_h
+            add_text(slide, x, iy, 0.4, row_h, "✓", size=16, bold=True, color="60BFB8",
+                      align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+            add_text(slide, x + 0.45, iy, w - 0.45, row_h, text, size=12, anchor=MSO_ANCHOR.MIDDLE)
+
+    elif gtype == "pillar_columns":
+        cols = data.get("columns", [])
+        n = max(len(cols), 1)
+        slot_w = w / n
+        col_w = slot_w - 0.1
+        for i, col in enumerate(cols):
+            cx = x + i * slot_w
+            add_rect(slide, cx, y, col_w, h, "F0F0F0")
+            add_text(slide, cx + 0.08, y + 0.1, col_w - 0.16, 0.4, col.get("title", ""),
+                      font="Rubik", size=11, bold=True, color="963058", align=PP_ALIGN.CENTER)
+            add_text(slide, cx + 0.08, y + 0.55, col_w - 0.16, h - 0.65, col.get("text", ""),
+                      size=10, color="202020", align=PP_ALIGN.CENTER)
+
+    # "none" and any unrecognized type: no-op
+
+
+# ── Corporate slide renderer (mirrors renderCorporateSlide) ────────────
+def render_slide(prs, slide_data):
+    section = slide_data.get("section")
+    cfg = SECTION_CONFIG.get(section, SECTION_CONFIG["conceptos"])
+    bullets = (slide_data.get("bullets") or [])[:3]
+    title = slide_data.get("title") or ""
+    subtitle = slide_data.get("subtitle")
+
+    graphic_type = slide_data.get("graphicType")
+    if graphic_type == "none":
+        graphic_type = None
+    legacy_graphic = None
+    if not graphic_type and slide_data.get("graphic") and slide_data["graphic"] != "none":
+        legacy_graphic = slide_data["graphic"]
+    has_graphic = bool(graphic_type or legacy_graphic)
+
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
+
+    if cfg["dark"]:
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = rgb(cfg["bg"])
+        if cfg.get("gradient"):
+            set_gradient_fill(slide.background.fill, angle_deg=45)
+
+        add_rect(slide, 0, 0, SLIDE_W, 0.06, "FFFFFF")
+
+        add_text(slide, 0.8, 1.4, 8.4, 1.8, title, font="Rubik", size=38, color="FFFFFF",
+                  align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+        if subtitle:
+            add_text(slide, 0.8, 3.2, 8.4, 0.7, subtitle, font="Lato", size=18, color="FFFFFF",
+                      align=PP_ALIGN.CENTER)
+
+        for i, bullet in enumerate(bullets):
+            add_text(slide, 1.5, 2.8 + i * 0.72, 7, 0.65, f"• {bullet}",
+                      font="Lato", size=18, color="FFFFFF", align=PP_ALIGN.CENTER)
+
+        add_gradient_bar(slide, 5.43, 0.2)
+
+    else:
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = rgb(cfg["bg"])
+
+        add_rect(slide, 0, 0, 0.14, SLIDE_H, cfg["accent"])
+
+        if cfg["label"]:
+            add_text(slide, 0.36, 0.2, 9.3, 0.32, cfg["label"].upper(), font="Lato", size=10,
+                      bold=True, color=cfg["accent"])
+
+        add_text(slide, 0.36, 0.52, 9.3, 1.0, title, font="Rubik", size=28, color=cfg["accent"])
+
+        add_rect(slide, 0.36, 1.52, 9.28, 0.018, "E0E0E0")
+
+        bullet_w = 5.7 if has_graphic else 9.06
+        bullet_y = 1.7
+        spacing = 1.1 if len(bullets) <= 2 else 0.9
+        for i, bullet in enumerate(bullets):
+            add_rect(slide, 0.36, bullet_y + i * spacing + 0.27, 0.07, 0.07, cfg["accent"])
+            add_text(slide, 0.58, bullet_y + i * spacing, bullet_w, spacing - 0.05, bullet,
+                      font="Lato", size=18, color="202020", anchor=MSO_ANCHOR.MIDDLE)
+
+        if has_graphic:
+            panel_x, panel_y, panel_w, panel_h = 6.3, 1.7, 3.3, 3.4
+            add_rect(slide, panel_x, panel_y, panel_w, panel_h, "F5F5F5", MSO_SHAPE.ROUNDED_RECTANGLE)
+            inner = {"x": panel_x + 0.25, "y": panel_y + 0.25, "w": panel_w - 0.5, "h": panel_h - 0.5}
+            if graphic_type:
+                render_graphic(slide, graphic_type, slide_data.get("graphicData") or {}, inner)
+            else:
+                add_text(slide, inner["x"], inner["y"], inner["w"], inner["h"], legacy_graphic,
+                          font="Lato", size=12, color=cfg["accent"], italic=True,
+                          align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+        add_gradient_bar(slide, 5.43, 0.2)
+
+    return slide
+
+
+def main():
+    input_path, output_path = sys.argv[1], sys.argv[2]
+    with open(input_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    plan = payload["plan"]
+    scripts_by_n = {s["n"]: s for s in payload.get("scripts") or []}
+
+    prs = Presentation()
+    prs.slide_width = Emu(int(SLIDE_W * EMU_PER_IN))
+    prs.slide_height = Emu(int(SLIDE_H * EMU_PER_IN))
+    prs.core_properties.title = plan.get("unit", "")
+
+    for slide_data in plan.get("slides", []):
+        slide = render_slide(prs, slide_data)
+        script_data = scripts_by_n.get(slide_data.get("n"), {})
+        notes = "\n\n---\n".join(
+            [v for v in [script_data.get("script"), script_data.get("productionNotes")] if v]
+        )
+        if notes:
+            slide.notes_slide.notes_text_frame.text = notes
+
+    prs.save(output_path)
+
+
+if __name__ == "__main__":
+    main()
