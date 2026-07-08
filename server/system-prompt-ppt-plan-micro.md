@@ -72,6 +72,7 @@ Only use these types (rendered natively as PowerPoint shapes/images — brand-ex
 | `before_after` | A contrast between two states (e.g. two mismatched scores) | `{ "beforeLabel": "Before", "beforeText": "...", "afterLabel": "After", "afterText": "..." }` |
 | `smart_grid` | 4–6 short labeled items in a grid, one highlighted | `{ "items": [{ "letter": "S", "word": "Specific" }], "highlightLetter": "S" }` |
 | `data_table` | Tabular data with 2+ columns | `{ "columns": ["Col A", "Col B"], "rows": [["a1", "b1"]] }` |
+| `illustration` | A decorative hero image for inicio (hook) or resumen (closing visual) only — NOT title/cierre (stay minimal), and not a substitute for a concepto/puntos_clave diagram | `{ "name": "one of the illustration names below", "accentColor": "hex, optional — defaults to teal" }` |
 
 ### Icon set
 
@@ -80,3 +81,11 @@ Where `graphicData` accepts an optional `icon` field, use ONLY these exact names
 `lightbulb`, `checklist`, `dns`, `person`, `groups`, `balance`, `shield`, `check_circle`, `map`, `school`, `sync`, `monitoring`, `rocket_launch`, `gavel`, `flag`, `calendar_month`, `trending_up`, `database`, `storage`, `warning`, `target`, `rule`
 
 Pick the icon whose real-world meaning matches the content. Icons are optional — omit rather than guess a name outside this list.
+
+### Illustration set
+
+Where `graphicType` is `illustration`, `name` must be ONE of these exact values (unDraw, pre-rasterized brand-colored PNGs, minimalist single-accent-color style — anything else is silently dropped, no image shown):
+
+`online-learning`, `artificial-intelligence`, `teacher`, `data-processing`, `growth-chart`, `security`, `collaboration`, `graduation`, `road-to-knowledge`, `mind-map`
+
+Use at most once per deck, on inicio or resumen only.

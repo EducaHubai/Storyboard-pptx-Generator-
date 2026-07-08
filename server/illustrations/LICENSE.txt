@@ -1,0 +1,14 @@
+Illustrations in this directory are rasterized (recolored accent shape
+to brand hex, PNG, ~1000px wide, preserving each illustration's aspect
+ratio) from unDraw, MIT licensed, via the community mirror
+https://github.com/balazser/undraw-svg-collection (open-source SVGs,
+same MIT terms as the original https://undraw.co).
+
+Recoloring: only the accent shapes (originally `var(--primary-svg-color)`
+in the source SVG) are recolored to brand hex. Structural grays/darks
+and skin-tone paths are left as-is, matching unDraw's own customization
+model (one primary color, neutral everything else) — the closest fit to
+a "minimalist monoline" look this library offers; unDraw itself is a
+flat-shape style, not literal single-stroke line art.
+
+Filename pattern: {illustration_name}__{HEXCOLOR}.png

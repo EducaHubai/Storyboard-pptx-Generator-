@@ -31,11 +31,21 @@ EMU_PER_IN = 914400
 SLIDE_W = 10.0
 SLIDE_H = 5.625
 
-# Icon set: Material Symbols (Outlined), Apache 2.0 — pre-rasterized to
-# PNG in brand colors (see server/icons/LICENSE.txt). GPT-4o picks from
-# this exact set; anything else is silently skipped (no icon rendered).
+# Icon set: Lucide (ISC/MIT), pre-rasterized to PNG in brand colors (see
+# server/icons/LICENSE.txt). GPT-4o picks from this exact set; anything
+# else is silently skipped (no icon rendered).
 ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 ICON_COLORS = {"FFFFFF", "244A80", "2E7ABE", "963058", "E96A73", "60BFB8", "202020"}
+
+# Illustration set: unDraw (MIT), pre-rasterized to PNG with the accent
+# shape recolored to brand hex (see server/illustrations/LICENSE.txt).
+ILLUSTRATIONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "illustrations")
+ILLUSTRATION_COLORS = ICON_COLORS
+ILLUSTRATION_NAMES = {
+    "online-learning", "artificial-intelligence", "teacher", "data-processing",
+    "growth-chart", "security", "collaboration", "graduation",
+    "road-to-knowledge", "mind-map",
+}
 
 # Brand gradient stops (teal -> blue-m -> blue-d -> burdeos -> rosa)
 GRADIENT_STOPS = [
@@ -132,6 +142,29 @@ def add_icon(slide, icon_name, x, y, size, color="202020"):
     if not os.path.isfile(path):
         return
     slide.shapes.add_picture(path, Inches(x), Inches(y), Inches(size), Inches(size))
+
+
+def add_illustration(slide, name, box, color="60BFB8"):
+    """Place a pre-baked unDraw illustration, fitted (not stretched)
+    inside box and centered — each illustration keeps its own native
+    aspect ratio. No-op if name/color isn't one of the baked assets."""
+    if name not in ILLUSTRATION_NAMES or color.upper() not in ILLUSTRATION_COLORS:
+        return
+    path = os.path.join(ILLUSTRATIONS_DIR, f"{name}__{color.upper()}.png")
+    if not os.path.isfile(path):
+        return
+    from PIL import Image
+    with Image.open(path) as img:
+        native_w, native_h = img.size
+    box_ratio = box["w"] / box["h"]
+    native_ratio = native_w / native_h
+    if native_ratio > box_ratio:
+        fit_w, fit_h = box["w"], box["w"] / native_ratio
+    else:
+        fit_w, fit_h = box["h"] * native_ratio, box["h"]
+    fit_x = box["x"] + (box["w"] - fit_w) / 2
+    fit_y = box["y"] + (box["h"] - fit_h) / 2
+    slide.shapes.add_picture(path, Inches(fit_x), Inches(fit_y), Inches(fit_w), Inches(fit_h))
 
 
 def _as_dict(item):
@@ -314,6 +347,12 @@ def render_graphic(slide, gtype, data, box):
             _render_icon_card(slide, x + col * cell_w, y + row * cell_h, cell_w, cell_h, item, "244A80")
             rendered_count += 1
 
+    elif gtype == "illustration":
+        name = data.get("name", "")
+        color = data.get("accentColor") or "60BFB8"
+        add_illustration(slide, name, {"x": x, "y": y, "w": w, "h": h}, color)
+        rendered_count += 1 if name in ILLUSTRATION_NAMES else 0
+
     else:
         # "none" and any unrecognized type: no-op
         return
@@ -367,9 +406,26 @@ def render_slide(prs, slide_data):
             add_text(slide, 0.8, 3.2, 8.4, 0.7, subtitle, font="Lato", size=18, color="FFFFFF",
                       align=PP_ALIGN.CENTER)
 
+        # Illustration on resumen only — título/cierre stay minimal per
+        # the manual's design guide (§7: "Mínimo; solo título y
+        # subtítulo" / "Mínimo; limpio y claro"). No gray panel here
+        # (unlike light-bg graphics): it's decorative art directly on
+        # the brand color, not a data diagram needing a legibility panel.
+        show_illustration = section == "resumen" and graphic_type == "illustration"
+        bullet_w = 4.6 if show_illustration else 7
+        bullet_x = 0.8 if show_illustration else 1.5
         for i, bullet in enumerate(bullets):
-            add_text(slide, 1.5, 2.8 + i * 0.72, 7, 0.65, f"• {bullet}",
-                      font="Lato", size=18, color="FFFFFF", align=PP_ALIGN.CENTER)
+            add_text(slide, bullet_x, 2.8 + i * 0.72, bullet_w, 0.65, f"• {bullet}",
+                      font="Lato", size=18, color="FFFFFF",
+                      align=PP_ALIGN.LEFT if show_illustration else PP_ALIGN.CENTER)
+
+        if show_illustration:
+            # White, per §6.3: text/art on a brand-color background is
+            # always white — overrides any accentColor GPT-4o picked.
+            illus_data = dict(slide_data.get("graphicData") or {})
+            illus_data["accentColor"] = "FFFFFF"
+            illus_box = {"x": 5.6, "y": 1.6, "w": 3.6, "h": 3.6}
+            render_graphic(slide, "illustration", illus_data, illus_box)
 
         add_gradient_bar(slide, 5.43, 0.2)
 
