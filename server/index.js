@@ -56,18 +56,23 @@ const SCHEMA = fs.readFileSync(
   path.join(__dirname, "storyboard.schema.json"),
   "utf-8"
 );
-const PPT_PLAN_PROMPT = fs.readFileSync(
-  path.join(__dirname, "system-prompt-ppt-plan.md"),
-  "utf-8"
-);
-const PPT_GENERATE_PROMPT = fs.readFileSync(
-  path.join(__dirname, "system-prompt-ppt-generate.md"),
-  "utf-8"
-);
-const PDF_TO_PLAN_PROMPT = fs.readFileSync(
-  path.join(__dirname, "system-prompt-pdf-to-plan.md"),
-  "utf-8"
-);
+// Two pacing formats: "standard" (8–10 slides, 4:30–5:30min) and "micro"
+// (12–18 short slides, ~15s each, one epigraph per slide).
+const PPT_PLAN_PROMPT = {
+  standard: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-plan.md"), "utf-8"),
+  micro: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-plan-micro.md"), "utf-8"),
+};
+const PPT_GENERATE_PROMPT = {
+  standard: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-generate.md"), "utf-8"),
+  micro: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-generate-micro.md"), "utf-8"),
+};
+const PDF_TO_PLAN_PROMPT = {
+  standard: fs.readFileSync(path.join(__dirname, "system-prompt-pdf-to-plan.md"), "utf-8"),
+  micro: fs.readFileSync(path.join(__dirname, "system-prompt-pdf-to-plan-micro.md"), "utf-8"),
+};
+function resolveFormat(value) {
+  return value === "micro" ? "micro" : "standard";
+}
 
 // Brand fonts (Rubik, Lato — OFL licensed) embedded into generated .pptx
 // files so headings/body render correctly on machines that don't have
@@ -196,8 +201,9 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
     const { text: pdfText } = await pdfParse(pdfBuffer);
     fs.unlink(req.file.path, () => {});
 
+    const format = resolveFormat(req.body.format);
     const raw = await callOpenAI(
-      PDF_TO_PLAN_PROMPT,
+      PDF_TO_PLAN_PROMPT[format],
       `Here is the full content of the course unit:\n\n${pdfText.slice(0, 14000)}\n\nExtract the unit content and generate the slide plan JSON.`
     );
     const plan = JSON.parse(raw);
@@ -214,7 +220,7 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
 // ────────────────────────────────────────────────────────────
 app.post("/api/ppt-plan", async (req, res) => {
   try {
-    const { epigraphs, unit, afo, avatar } = req.body;
+    const { epigraphs, unit, afo, avatar, format } = req.body;
     if (!epigraphs || !unit || !afo) {
       return res.status(400).json({ error: "Missing required fields: epigraphs, unit, afo." });
     }
@@ -231,7 +237,7 @@ app.post("/api/ppt-plan", async (req, res) => {
       ...epigraphs.map((e, i) => `${i + 1}. ${e}`),
     ].filter(Boolean).join("\n");
 
-    const raw = await callOpenAI(PPT_PLAN_PROMPT, userMessage);
+    const raw = await callOpenAI(PPT_PLAN_PROMPT[resolveFormat(format)], userMessage);
     const plan = JSON.parse(raw);
     res.json(plan);
   } catch (err) {
@@ -254,9 +260,9 @@ app.post("/api/ppt-generate", async (req, res) => {
       return res.status(500).json({ error: "Server is missing OPENAI_API_KEY." });
     }
 
-    // Step 1: generate scripts + EducaLab metadata via Claude
+    // Step 1: generate scripts + EducaLab metadata via GPT-4o
     const raw = await callOpenAI(
-      PPT_GENERATE_PROMPT,
+      PPT_GENERATE_PROMPT[resolveFormat(plan.format)],
       `Generate the avatar script and EducaLab metadata for this approved slide plan:\n\n${JSON.stringify(plan, null, 2)}`,
       6000
     );

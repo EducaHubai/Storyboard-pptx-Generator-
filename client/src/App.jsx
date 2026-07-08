@@ -97,7 +97,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   // ── PPT + Script handlers ─────────────────────────────────
-  const handlePdfUpload = useCallback(async (file) => {
+  const handlePdfUpload = useCallback(async (file, format) => {
     setLoading(true);
     setError(null);
 
@@ -112,6 +112,7 @@ export default function App() {
     try {
       const formData = new FormData();
       formData.append("pdf", file);
+      formData.append("format", format);
       const res = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: formData });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const plan = await res.json();
@@ -126,7 +127,7 @@ export default function App() {
     }
   }, []);
 
-  const handleManualPlan = useCallback(async ({ unit, afo, avatar, epigraphs }) => {
+  const handleManualPlan = useCallback(async ({ unit, afo, avatar, epigraphs, format }) => {
     setLoading(true);
     setError(null);
 
@@ -142,7 +143,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/ppt-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ unit, afo, avatar: avatar || null, epigraphs }),
+        body: JSON.stringify({ unit, afo, avatar: avatar || null, epigraphs, format }),
       });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const plan = await res.json();
@@ -274,6 +275,7 @@ function TopBar({ screen }) {
 ────────────────────────────────────────────────────────── */
 function UploadScreen({ onUpload, onManualSubmit, loading }) {
   const [mode, setMode] = useState("pdf"); // "pdf" | "manual"
+  const [format, setFormat] = useState("standard"); // "standard" | "micro"
   const [dragOver, setDragOver] = useState(false);
   const [unit, setUnit] = useState("");
   const [afo, setAfo] = useState("");
@@ -284,14 +286,14 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file && file.type === "application/pdf") onUpload(file);
+    if (file && file.type === "application/pdf") onUpload(file, format);
   };
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
     const epigraphs = epigraphsText.split("\n").map((s) => s.trim()).filter(Boolean);
     if (!unit || !afo || epigraphs.length === 0) return;
-    onManualSubmit({ unit, afo, avatar, epigraphs });
+    onManualSubmit({ unit, afo, avatar, epigraphs, format });
   };
 
   return (
@@ -317,6 +319,26 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
           >
             Type epigraphs
           </button>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <p style={{ ...styles.dropSubtext, marginBottom: 8 }}>Pacing format</p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <button
+              style={{ ...styles.graphicChip, ...(format === "standard" ? styles.graphicChipActive : {}) }}
+              onClick={() => setFormat("standard")}
+              title="8–10 slides, 4:30–5:30 min video"
+            >
+              Standard (8–10 slides)
+            </button>
+            <button
+              style={{ ...styles.graphicChip, ...(format === "micro" ? styles.graphicChipActive : {}) }}
+              onClick={() => setFormat("micro")}
+              title="12–18 short slides, max 15s each, under 4 min video"
+            >
+              Microlearning (12–18 slides)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -348,7 +370,7 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
               <label style={styles.browseBtn}>
                 Browse files
                 <input type="file" accept="application/pdf" style={{ display: "none" }}
-                  onChange={(e) => e.target.files[0] && onUpload(e.target.files[0])} />
+                  onChange={(e) => e.target.files[0] && onUpload(e.target.files[0], format)} />
               </label>
               <p style={{ ...styles.dropSubtext, marginTop: 8 }}>PDF only · max one unit per upload</p>
             </>
@@ -393,10 +415,13 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
 const SECTION_LABELS = {
   title: "Title", entrada: "Introduction", conceptos: "Key Concepts",
   puntos_clave: "Key Points", resumen: "Summary", cierre: "Closing",
+  // Microlearning format section names (one slide per epigraph)
+  inicio: "Introduction", concepto: "Key Concept",
 };
 const SECTION_COLORS = {
   title: BRAND.teal, entrada: BRAND.teal, conceptos: BRAND.azulOscuro,
   puntos_clave: BRAND.azulMedio, resumen: BRAND.burdeos, cierre: BRAND.rosa,
+  inicio: BRAND.teal, concepto: BRAND.azulOscuro,
 };
 
 function PptPlanScreen({ plan, onPlanChange, onBack, onApprove, loading }) {

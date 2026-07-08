@@ -18,6 +18,7 @@ Font embedding is NOT done here — server/index.js post-processes the
 resulting .pptx (embedFonts()) regardless of which renderer produced it.
 """
 import json
+import os
 import sys
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -29,6 +30,12 @@ from pptx.oxml.ns import qn
 EMU_PER_IN = 914400
 SLIDE_W = 10.0
 SLIDE_H = 5.625
+
+# Icon set: Material Symbols (Outlined), Apache 2.0 — pre-rasterized to
+# PNG in brand colors (see server/icons/LICENSE.txt). GPT-4o picks from
+# this exact set; anything else is silently skipped (no icon rendered).
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
+ICON_COLORS = {"FFFFFF", "244A80", "2E7ABE", "963058", "E96A73", "60BFB8", "202020"}
 
 # Brand gradient stops (teal -> blue-m -> blue-d -> burdeos -> rosa)
 GRADIENT_STOPS = [
@@ -49,6 +56,10 @@ SECTION_CONFIG = {
     "cierre":       {"bg": "E96A73", "accent": "E96A73", "dark": True,  "label": None,
                       "gradient": True},
 }
+# Microlearning format uses "inicio"/"concepto" (singular, one slide per
+# epigraph) instead of "entrada"/"conceptos" — same visual treatment.
+SECTION_CONFIG["inicio"] = SECTION_CONFIG["entrada"]
+SECTION_CONFIG["concepto"] = SECTION_CONFIG["conceptos"]
 
 
 def rgb(hex_color):
@@ -108,6 +119,19 @@ def add_text(slide, x, y, w, h, text, font="Lato", size=14, bold=False, italic=F
     run.font.italic = italic
     run.font.color.rgb = rgb(color)
     return box
+
+
+def add_icon(slide, icon_name, x, y, size, color="202020"):
+    """Place a pre-baked icon PNG. No-op (skips silently) if the
+    (icon_name, color) pair isn't one of the pre-rasterized assets —
+    GPT-4o is instructed to only use the documented icon set, but a
+    bad/hallucinated name shouldn't break slide generation."""
+    if not icon_name or color.upper() not in ICON_COLORS:
+        return
+    path = os.path.join(ICONS_DIR, f"{icon_name}__{color.upper()}.png")
+    if not os.path.isfile(path):
+        return
+    slide.shapes.add_picture(path, Inches(x), Inches(y), Inches(size), Inches(size))
 
 
 # ── Graphic renderers (mirrors server/index.js renderGraphic()) ────────
@@ -206,10 +230,47 @@ def render_graphic(slide, gtype, data, box):
         for i, col in enumerate(cols):
             cx = x + i * slot_w
             add_rect(slide, cx, y, col_w, h, "F0F0F0")
-            add_text(slide, cx + 0.08, y + 0.1, col_w - 0.16, 0.4, col.get("title", ""),
+            icon = col.get("icon")
+            title_y = y + 0.1
+            if icon:
+                icon_size = 0.4
+                add_icon(slide, icon, cx + col_w / 2 - icon_size / 2, y + 0.12, icon_size, "963058")
+                title_y = y + 0.55
+            add_text(slide, cx + 0.08, title_y, col_w - 0.16, 0.4, col.get("title", ""),
                       font="Rubik", size=11, bold=True, color="963058", align=PP_ALIGN.CENTER)
-            add_text(slide, cx + 0.08, y + 0.55, col_w - 0.16, h - 0.65, col.get("text", ""),
-                      size=10, color="202020", align=PP_ALIGN.CENTER)
+            add_text(slide, cx + 0.08, title_y + 0.45, col_w - 0.16, h - (title_y - y) - 0.55,
+                      col.get("text", ""), size=10, color="202020", align=PP_ALIGN.CENTER)
+
+    elif gtype == "icon_grid":
+        # 2-column grid of icon + title + short description cards — the
+        # dominant graphic pattern for concept/key-point slides (icon
+        # cards), heavier than pillar_columns which is a single row.
+        items = data.get("items", [])
+        n = max(len(items), 1)
+        cols = 2 if n > 1 else 1
+        rows = (n + cols - 1) // cols
+        cell_w = w / cols
+        cell_h = h / rows
+        for i, item in enumerate(items):
+            col, row = i % cols, i // cols
+            cx = x + col * cell_w
+            cy = y + row * cell_h
+            pad = 0.06
+            add_rect(slide, cx + pad, cy + pad, cell_w - 2 * pad, cell_h - 2 * pad, "F5F5F5", MSO_SHAPE.ROUNDED_RECTANGLE)
+            icon = item.get("icon")
+            text_y = cy + pad + 0.08
+            if icon:
+                icon_size = 0.34
+                add_icon(slide, icon, cx + pad + 0.12, cy + pad + 0.08, icon_size, "244A80")
+                text_y = cy + pad + 0.08
+                title_x = cx + pad + 0.12 + icon_size + 0.1
+            else:
+                title_x = cx + pad + 0.12
+            title_w = cell_w - 2 * pad - (title_x - (cx + pad))
+            add_text(slide, title_x, text_y, title_w, 0.3, item.get("title", ""),
+                      font="Rubik", size=10, bold=True, color="244A80", anchor=MSO_ANCHOR.MIDDLE)
+            add_text(slide, cx + pad + 0.12, cy + pad + 0.5, cell_w - 2 * pad - 0.24, cell_h - 2 * pad - 0.6,
+                      item.get("text", ""), size=9, color="202020")
 
     # "none" and any unrecognized type: no-op
 
@@ -236,7 +297,13 @@ def render_slide(prs, slide_data):
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = rgb(cfg["bg"])
         if cfg.get("gradient"):
-            set_gradient_fill(slide.background.fill, angle_deg=45)
+            # Cierre bookends title with the gradient reversed (rosa→teal
+            # instead of teal→rosa) — same brand ramp, opposite direction.
+            positions = [pos for pos, _ in GRADIENT_STOPS]
+            colors = [color for _, color in GRADIENT_STOPS]
+            if section == "cierre":
+                colors = list(reversed(colors))
+            set_gradient_fill(slide.background.fill, stops=list(zip(positions, colors)), angle_deg=45)
 
         add_rect(slide, 0, 0, SLIDE_W, 0.06, "FFFFFF")
 

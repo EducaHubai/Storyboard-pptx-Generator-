@@ -62,9 +62,18 @@ Only use these types (rendered natively as PowerPoint shapes — no images, no c
 | `three_node_sequence` | A 2–4 step process or before→after→result flow | `{ "nodes": ["Step one", "Step two", "Step three"] }` |
 | `numbered_list` | 2–5 sequential items where order matters | `{ "items": ["First item", "Second item"] }` |
 | `validation_flow` | 2–5 checklist-style steps (things completed/validated) | `{ "steps": ["Draft", "Review", "Approve"] }` |
-| `pillar_columns` | 2–4 parallel concepts/pillars shown side by side | `{ "columns": [{ "title": "Pillar A", "text": "short description" }] }` |
+| `pillar_columns` | 2–4 parallel concepts/pillars shown side by side (single row) | `{ "columns": [{ "icon": "gavel", "title": "Pillar A", "text": "short description" }] }` — `icon` is optional |
+| `icon_grid` | 3–6 concepts/dimensions, each with an icon — the default choice for "N cards" content (richer than pillar_columns, wraps into a 2-column grid) | `{ "items": [{ "icon": "dns", "title": "Infrastructure", "text": "short description" }] }` — `icon` is optional |
 | `before_after` | A contrast between two states | `{ "beforeLabel": "Before", "beforeText": "...", "afterLabel": "After", "afterText": "..." }` |
 | `smart_grid` | 4–6 short labeled items in a grid, one highlighted | `{ "items": [{ "letter": "S", "word": "Specific" }], "highlightLetter": "S" }` |
 | `data_table` | Tabular data with 2+ columns | `{ "columns": ["Col A", "Col B"], "rows": [["a1", "b1"]] }` |
+
+### Icon set
+
+Where a `graphicData` shape accepts an optional `icon` field, use ONLY these exact names (Material Symbols Outlined, rendered as pre-made brand-colored PNGs — anything else is silently dropped, no icon shown):
+
+`lightbulb`, `checklist`, `dns`, `person`, `groups`, `balance`, `shield`, `check_circle`, `map`, `school`, `sync`, `monitoring`, `rocket_launch`, `gavel`, `flag`, `calendar_month`, `trending_up`, `database`, `storage`, `warning`, `target`, `rule`
+
+Pick the icon whose real-world meaning matches the content (e.g. `gavel` for legal/regulatory, `groups` for people/culture, `rocket_launch` for launch/scale, `shield` for security/protection). Icons are optional — omit the field entirely rather than guessing a name outside this list.
 
 Use graphics mainly on conceptos and puntos_clave slides — the sections the manual expects to carry diagrams/flows (§7 of the manual). Keep every label short (2–5 words) since it renders on-screen while the avatar speaks.

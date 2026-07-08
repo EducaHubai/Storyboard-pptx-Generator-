@@ -1,0 +1,8 @@
+Icons in this directory are rasterized (recolored to brand hex, PNG,
+192x192) from Google's Material Symbols (Outlined), licensed under the
+Apache License, Version 2.0.
+
+Source: https://github.com/google/material-design-icons
+License: https://www.apache.org/licenses/LICENSE-2.0
+
+Filename pattern: {icon_name}__{HEXCOLOR}.png
