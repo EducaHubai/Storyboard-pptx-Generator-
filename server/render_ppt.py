@@ -134,41 +134,79 @@ def add_icon(slide, icon_name, x, y, size, color="202020"):
     slide.shapes.add_picture(path, Inches(x), Inches(y), Inches(size), Inches(size))
 
 
+def _as_dict(item):
+    """GPT-4o sometimes sends a plain string where the schema documents
+    an object (e.g. ["Discover", "Apply"] instead of [{"title": ...}]).
+    Coerce so the renderer still shows something instead of a blank
+    panel — rather than silently dropping a slide's only visual."""
+    if isinstance(item, dict):
+        return item
+    if isinstance(item, str):
+        return {"title": item, "text": "", "label": item, "step": item, "word": item}
+    return {}
+
+
+def _text_of(item, *keys):
+    d = _as_dict(item)
+    for k in keys:
+        v = d.get(k)
+        if v:
+            return str(v)
+    return ""
+
+
 # ── Graphic renderers (mirrors server/index.js renderGraphic()) ────────
 def render_graphic(slide, gtype, data, box):
     x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+    if not isinstance(data, dict):
+        data = {}
+
+    rendered_count = 0
 
     if gtype == "text_only":
-        add_text(slide, x, y, w, h, data.get("text", ""), font="Lato", size=13,
+        text = data.get("text", "")
+        add_text(slide, x, y, w, h, text, font="Lato", size=13,
                   italic=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+        rendered_count += 1 if text else 0
 
     elif gtype == "before_after":
+        before_text = data.get("beforeText", "")
+        after_text = data.get("afterText", "")
         add_text(slide, x, y, w, 1,
-                  f"{data.get('beforeLabel', 'Before')}: {data.get('beforeText', '')}",
+                  f"{data.get('beforeLabel', 'Before')}: {before_text}",
                   size=12, color="963058")
         add_text(slide, x, y + 1.2, w, 1.2,
-                  f"{data.get('afterLabel', 'After')}: {data.get('afterText', '')}",
+                  f"{data.get('afterLabel', 'After')}: {after_text}",
                   size=12, color="202020")
+        rendered_count += 1 if (before_text or after_text) else 0
 
     elif gtype == "smart_grid":
-        items = data.get("items", [])
+        items = [_as_dict(i) for i in data.get("items") or []]
         highlight = data.get("highlightLetter")
         for i, item in enumerate(items):
             col, row = i % 2, i // 2
             cx = x + col * (w / 2)
             cy = y + row * 0.9
-            is_hl = item.get("letter") == highlight
+            letter = item.get("letter") or (_text_of(item, "title", "word", "text")[:1])
+            word = item.get("word") or _text_of(item, "title", "text")
+            is_hl = letter == highlight
             add_rect(slide, cx, cy, w / 2 - 0.05, 0.85, "963058" if is_hl else "F0F0F0")
-            add_text(slide, cx, cy, w / 2 - 0.05, 0.55, item.get("letter", ""),
+            add_text(slide, cx, cy, w / 2 - 0.05, 0.55, letter,
                       font="Rubik", size=22, bold=True,
                       color="FFFFFF" if is_hl else "666666",
                       align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-            add_text(slide, cx, cy + 0.55, w / 2 - 0.05, 0.3, item.get("word", ""),
+            add_text(slide, cx, cy + 0.55, w / 2 - 0.05, 0.3, word,
                       size=8, color="666666", align=PP_ALIGN.CENTER)
+            rendered_count += 1
 
     elif gtype == "data_table":
-        columns = data.get("columns", [])
-        rows = data.get("rows", [])
+        columns = data.get("columns") or []
+        raw_rows = data.get("rows") or []
+        # Coerce rows given as {col: val} dicts instead of positional arrays.
+        rows = [
+            [r.get(c, "") for c in columns] if isinstance(r, dict) else r
+            for r in raw_rows
+        ]
         n_rows = len(rows) + 1
         n_cols = max(len(columns), 1)
         gfx = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(min(h, 0.4 * n_rows)))
@@ -187,13 +225,15 @@ def render_graphic(slide, gtype, data, box):
                 cell = table.cell(r + 1, c)
                 cell.text = str(cell_val)
                 cell.text_frame.paragraphs[0].runs[0].font.size = Pt(11)
+        rendered_count += len(rows)
 
     elif gtype == "three_node_sequence":
-        nodes = data.get("nodes", [])
+        nodes = data.get("nodes") or []
         n = max(len(nodes), 1)
         slot_w = w / n
         node_w = slot_w - 0.18
-        for i, label in enumerate(nodes):
+        for i, node in enumerate(nodes):
+            label = node if isinstance(node, str) else _text_of(node, "label", "title", "text", "step")
             nx = x + i * slot_w
             ny = y + h / 2 - 0.35
             add_rect(slide, nx, ny, node_w, 0.7, "244A80", MSO_SHAPE.ROUNDED_RECTANGLE)
@@ -202,28 +242,33 @@ def render_graphic(slide, gtype, data, box):
             if i < n - 1:
                 add_text(slide, nx + node_w, y + h / 2 - 0.25, slot_w - node_w, 0.5, "→",
                           size=16, color="963058", align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+            rendered_count += 1
 
     elif gtype == "numbered_list":
-        items = data.get("items", [])
+        items = data.get("items") or []
         row_h = h / max(len(items), 1)
-        for i, text in enumerate(items):
+        for i, item in enumerate(items):
+            text = item if isinstance(item, str) else _text_of(item, "text", "title", "label", "step")
             iy = y + i * row_h
             add_rect(slide, x, iy + row_h / 2 - 0.18, 0.36, 0.36, "2E7ABE", MSO_SHAPE.OVAL)
             add_text(slide, x, iy + row_h / 2 - 0.18, 0.36, 0.36, str(i + 1), font="Rubik",
                       size=13, bold=True, color="FFFFFF", align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
             add_text(slide, x + 0.5, iy, w - 0.5, row_h, text, size=12, anchor=MSO_ANCHOR.MIDDLE)
+            rendered_count += 1
 
     elif gtype == "validation_flow":
-        steps = data.get("steps", [])
+        steps = data.get("steps") or []
         row_h = h / max(len(steps), 1)
-        for i, text in enumerate(steps):
+        for i, step in enumerate(steps):
+            text = step if isinstance(step, str) else _text_of(step, "text", "title", "label", "step")
             iy = y + i * row_h
             add_text(slide, x, iy, 0.4, row_h, "✓", size=16, bold=True, color="60BFB8",
                       align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
             add_text(slide, x + 0.45, iy, w - 0.45, row_h, text, size=12, anchor=MSO_ANCHOR.MIDDLE)
+            rendered_count += 1
 
     elif gtype == "pillar_columns":
-        cols = data.get("columns", [])
+        cols = [_as_dict(c) for c in data.get("columns") or []]
         n = max(len(cols), 1)
         slot_w = w / n
         col_w = slot_w - 0.1
@@ -236,16 +281,17 @@ def render_graphic(slide, gtype, data, box):
                 icon_size = 0.4
                 add_icon(slide, icon, cx + col_w / 2 - icon_size / 2, y + 0.12, icon_size, "963058")
                 title_y = y + 0.55
-            add_text(slide, cx + 0.08, title_y, col_w - 0.16, 0.4, col.get("title", ""),
+            add_text(slide, cx + 0.08, title_y, col_w - 0.16, 0.4, _text_of(col, "title", "label"),
                       font="Rubik", size=11, bold=True, color="963058", align=PP_ALIGN.CENTER)
             add_text(slide, cx + 0.08, title_y + 0.45, col_w - 0.16, h - (title_y - y) - 0.55,
-                      col.get("text", ""), size=10, color="202020", align=PP_ALIGN.CENTER)
+                      _text_of(col, "text", "description"), size=10, color="202020", align=PP_ALIGN.CENTER)
+            rendered_count += 1
 
     elif gtype == "icon_grid":
         # 2-column grid of icon + title + short description cards — the
         # dominant graphic pattern for concept/key-point slides (icon
         # cards), heavier than pillar_columns which is a single row.
-        items = data.get("items", [])
+        items = [_as_dict(i) for i in data.get("items") or []]
         n = max(len(items), 1)
         cols = 2 if n > 1 else 1
         rows = (n + cols - 1) // cols
@@ -267,12 +313,24 @@ def render_graphic(slide, gtype, data, box):
             else:
                 title_x = cx + pad + 0.12
             title_w = cell_w - 2 * pad - (title_x - (cx + pad))
-            add_text(slide, title_x, text_y, title_w, 0.3, item.get("title", ""),
+            add_text(slide, title_x, text_y, title_w, 0.3, _text_of(item, "title", "label"),
                       font="Rubik", size=10, bold=True, color="244A80", anchor=MSO_ANCHOR.MIDDLE)
             add_text(slide, cx + pad + 0.12, cy + pad + 0.5, cell_w - 2 * pad - 0.24, cell_h - 2 * pad - 0.6,
-                      item.get("text", ""), size=9, color="202020")
+                      _text_of(item, "text", "description"), size=9, color="202020")
+            rendered_count += 1
 
-    # "none" and any unrecognized type: no-op
+    else:
+        # "none" and any unrecognized type: no-op
+        return
+
+    if rendered_count == 0:
+        # The panel/container was drawn (has_graphic was true) but the
+        # graphicData didn't contain anything render_graphic recognized —
+        # almost always means GPT-4o's JSON shape didn't match the
+        # documented schema for this graphicType. Surface it so it shows
+        # up in server logs instead of just an empty panel in the deck.
+        print(f"WARNING: graphicType '{gtype}' rendered 0 items — graphicData was: {json.dumps(data)[:300]}",
+              file=sys.stderr)
 
 
 # ── Corporate slide renderer (mirrors renderCorporateSlide) ────────────
