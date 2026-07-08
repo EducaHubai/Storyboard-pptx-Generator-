@@ -1,8 +1,15 @@
 Icons in this directory are rasterized (recolored to brand hex, PNG,
-192x192) from Google's Material Symbols (Outlined), licensed under the
-Apache License, Version 2.0.
+192x192) from Lucide, licensed under the ISC License (MIT-equivalent).
 
-Source: https://github.com/google/material-design-icons
-License: https://www.apache.org/licenses/LICENSE-2.0
+Source: https://github.com/lucide-icons/lucide
+License: https://github.com/lucide-icons/lucide/blob/main/LICENSE
 
 Filename pattern: {icon_name}__{HEXCOLOR}.png
+Icon name -> Lucide source name:
+  lightbulb -> lightbulb, checklist -> list-checks, dns -> server,
+  person -> user, groups -> users, balance -> scale, shield -> shield,
+  check_circle -> circle-check, map -> map, school -> graduation-cap,
+  sync -> refresh-cw, monitoring -> activity, rocket_launch -> rocket,
+  gavel -> gavel, flag -> flag, calendar_month -> calendar,
+  trending_up -> trending-up, database -> database, storage -> hard-drive,
+  warning -> triangle-alert, target -> target, rule -> clipboard-check

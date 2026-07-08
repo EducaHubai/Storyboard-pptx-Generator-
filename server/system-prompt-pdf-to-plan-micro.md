@@ -63,14 +63,14 @@ Only use these types (rendered natively as PowerPoint shapes/images — brand-ex
 | `numbered_list` | 2–5 sequential items where order matters | `{ "items": ["First item", "Second item"] }` |
 | `validation_flow` | 2–5 checklist-style steps | `{ "steps": ["Draft", "Review", "Approve"] }` |
 | `pillar_columns` | 2–4 parallel concepts shown side by side (single row) | `{ "columns": [{ "icon": "gavel", "title": "Pillar A", "text": "short description" }] }` — `icon` optional |
-| `icon_grid` | 3–6 concepts/dimensions, each with an icon (2-column grid) — default for "N cards" content | `{ "items": [{ "icon": "dns", "title": "Infrastructure", "text": "short description" }] }` — `icon` optional |
+| `icon_grid` | 3–6 concepts/dimensions, each with an icon (single row up to 4, wraps beyond) — default for "N cards" content | `{ "items": [{ "icon": "dns", "title": "Infrastructure", "text": "short description" }] }` — `icon` optional |
 | `before_after` | A contrast between two states | `{ "beforeLabel": "Before", "beforeText": "...", "afterLabel": "After", "afterText": "..." }` |
 | `smart_grid` | 4–6 short labeled items in a grid, one highlighted | `{ "items": [{ "letter": "S", "word": "Specific" }], "highlightLetter": "S" }` |
 | `data_table` | Tabular data with 2+ columns | `{ "columns": ["Col A", "Col B"], "rows": [["a1", "b1"]] }` |
 
 ### Icon set
 
-Where `graphicData` accepts an optional `icon` field, use ONLY these exact names (Material Symbols Outlined, pre-rasterized brand-colored PNGs — anything else is silently dropped):
+Where `graphicData` accepts an optional `icon` field, use ONLY these exact names (Lucide, pre-rasterized brand-colored PNGs — anything else is silently dropped):
 
 `lightbulb`, `checklist`, `dns`, `person`, `groups`, `balance`, `shield`, `check_circle`, `map`, `school`, `sync`, `monitoring`, `rocket_launch`, `gavel`, `flag`, `calendar_month`, `trending_up`, `database`, `storage`, `warning`, `target`, `rule`
 

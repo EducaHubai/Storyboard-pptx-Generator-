@@ -155,6 +155,28 @@ def _text_of(item, *keys):
     return ""
 
 
+def _render_icon_card(slide, cx, cy, cw, ch, item, accent_color, pad=0.12):
+    """Icon (centered, top) + bold title (centered) + description
+    (centered) inside a light card panel. Shared by pillar_columns and
+    icon_grid — the layout the manual's 'icon cards' visual expects."""
+    add_rect(slide, cx + pad * 0.4, cy + pad * 0.4, cw - pad * 0.8, ch - pad * 0.8,
+              "F5F5F5", MSO_SHAPE.ROUNDED_RECTANGLE)
+    inner_x = cx + pad
+    inner_w = cw - 2 * pad
+    cursor_y = cy + pad
+    icon = _as_dict(item).get("icon")
+    if icon:
+        icon_size = min(0.5, cw - 2 * pad)
+        add_icon(slide, icon, cx + cw / 2 - icon_size / 2, cursor_y, icon_size, accent_color)
+        cursor_y += icon_size + 0.12
+    add_text(slide, inner_x, cursor_y, inner_w, 0.34, _text_of(item, "title", "label"),
+              font="Rubik", size=12, bold=True, color=accent_color, align=PP_ALIGN.CENTER)
+    cursor_y += 0.4
+    remaining_h = max((cy + ch - pad) - cursor_y, 0.3)
+    add_text(slide, inner_x, cursor_y, inner_w, remaining_h, _text_of(item, "text", "description"),
+              size=10, color="202020", align=PP_ALIGN.CENTER)
+
+
 # ── Graphic renderers (mirrors server/index.js renderGraphic()) ────────
 def render_graphic(slide, gtype, data, box):
     x, y, w, h = box["x"], box["y"], box["w"], box["h"]
@@ -246,7 +268,9 @@ def render_graphic(slide, gtype, data, box):
 
     elif gtype == "numbered_list":
         items = data.get("items") or []
-        row_h = h / max(len(items), 1)
+        # Cap row height and pack from the top — stretching 2-3 items
+        # across the full panel height leaves large dead gaps.
+        row_h = min(h / max(len(items), 1), 0.75)
         for i, item in enumerate(items):
             text = item if isinstance(item, str) else _text_of(item, "text", "title", "label", "step")
             iy = y + i * row_h
@@ -258,7 +282,7 @@ def render_graphic(slide, gtype, data, box):
 
     elif gtype == "validation_flow":
         steps = data.get("steps") or []
-        row_h = h / max(len(steps), 1)
+        row_h = min(h / max(len(steps), 1), 0.75)
         for i, step in enumerate(steps):
             text = step if isinstance(step, str) else _text_of(step, "text", "title", "label", "step")
             iy = y + i * row_h
@@ -271,52 +295,23 @@ def render_graphic(slide, gtype, data, box):
         cols = [_as_dict(c) for c in data.get("columns") or []]
         n = max(len(cols), 1)
         slot_w = w / n
-        col_w = slot_w - 0.1
         for i, col in enumerate(cols):
-            cx = x + i * slot_w
-            add_rect(slide, cx, y, col_w, h, "F0F0F0")
-            icon = col.get("icon")
-            title_y = y + 0.1
-            if icon:
-                icon_size = 0.4
-                add_icon(slide, icon, cx + col_w / 2 - icon_size / 2, y + 0.12, icon_size, "963058")
-                title_y = y + 0.55
-            add_text(slide, cx + 0.08, title_y, col_w - 0.16, 0.4, _text_of(col, "title", "label"),
-                      font="Rubik", size=11, bold=True, color="963058", align=PP_ALIGN.CENTER)
-            add_text(slide, cx + 0.08, title_y + 0.45, col_w - 0.16, h - (title_y - y) - 0.55,
-                      _text_of(col, "text", "description"), size=10, color="202020", align=PP_ALIGN.CENTER)
+            _render_icon_card(slide, x + i * slot_w, y, slot_w, h, col, "963058")
             rendered_count += 1
 
     elif gtype == "icon_grid":
-        # 2-column grid of icon + title + short description cards — the
-        # dominant graphic pattern for concept/key-point slides (icon
-        # cards), heavier than pillar_columns which is a single row.
+        # Icon + title + description cards, one row when there are 4 or
+        # fewer (matches the manual's "N dimensions" pattern), wrapping
+        # to additional rows only past that.
         items = [_as_dict(i) for i in data.get("items") or []]
         n = max(len(items), 1)
-        cols = 2 if n > 1 else 1
+        cols = min(n, 4)
         rows = (n + cols - 1) // cols
         cell_w = w / cols
         cell_h = h / rows
         for i, item in enumerate(items):
             col, row = i % cols, i // cols
-            cx = x + col * cell_w
-            cy = y + row * cell_h
-            pad = 0.06
-            add_rect(slide, cx + pad, cy + pad, cell_w - 2 * pad, cell_h - 2 * pad, "F5F5F5", MSO_SHAPE.ROUNDED_RECTANGLE)
-            icon = item.get("icon")
-            text_y = cy + pad + 0.08
-            if icon:
-                icon_size = 0.34
-                add_icon(slide, icon, cx + pad + 0.12, cy + pad + 0.08, icon_size, "244A80")
-                text_y = cy + pad + 0.08
-                title_x = cx + pad + 0.12 + icon_size + 0.1
-            else:
-                title_x = cx + pad + 0.12
-            title_w = cell_w - 2 * pad - (title_x - (cx + pad))
-            add_text(slide, title_x, text_y, title_w, 0.3, _text_of(item, "title", "label"),
-                      font="Rubik", size=10, bold=True, color="244A80", anchor=MSO_ANCHOR.MIDDLE)
-            add_text(slide, cx + pad + 0.12, cy + pad + 0.5, cell_w - 2 * pad - 0.24, cell_h - 2 * pad - 0.6,
-                      _text_of(item, "text", "description"), size=9, color="202020")
+            _render_icon_card(slide, x + col * cell_w, y + row * cell_h, cell_w, cell_h, item, "244A80")
             rendered_count += 1
 
     else:
@@ -401,7 +396,14 @@ def render_slide(prs, slide_data):
                       font="Lato", size=18, color="202020", anchor=MSO_ANCHOR.MIDDLE)
 
         if has_graphic:
-            panel_x, panel_y, panel_w, panel_h = 6.3, 1.7, 3.3, 3.4
+            # No bullets to share the row with → let the graphic take the
+            # full content width instead of the narrow 3.3in side panel
+            # (a 4-card icon_grid needs the room; a lone bullet slide
+            # squeezed next to it looks sparse either way).
+            if bullets:
+                panel_x, panel_y, panel_w, panel_h = 6.3, 1.7, 3.3, 3.4
+            else:
+                panel_x, panel_y, panel_w, panel_h = 0.36, 1.7, 9.28, 3.4
             add_rect(slide, panel_x, panel_y, panel_w, panel_h, "F5F5F5", MSO_SHAPE.ROUNDED_RECTANGLE)
             inner = {"x": panel_x + 0.25, "y": panel_y + 0.25, "w": panel_w - 0.5, "h": panel_h - 0.5}
             if graphic_type:
