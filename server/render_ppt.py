@@ -188,6 +188,24 @@ def _text_of(item, *keys):
     return ""
 
 
+MIN_CARD_W = 1.7  # below this, title/description wrap into an unreadable mess
+
+
+def _render_card_grid(slide, x, y, w, h, items, accent_color, max_cols=4):
+    """Lay out icon cards in a grid, choosing column count from the
+    ACTUAL available width — not just item count. A narrow side panel
+    (e.g. bullets present) gets 1 column and wraps to more rows instead
+    of squeezing N cards into slivers too thin for their text."""
+    n = max(len(items), 1)
+    cols = max(1, min(n, max_cols, int(w // MIN_CARD_W) or 1))
+    rows = (n + cols - 1) // cols
+    cell_w = w / cols
+    cell_h = h / rows
+    for i, item in enumerate(items):
+        col, row = i % cols, i // cols
+        _render_icon_card(slide, x + col * cell_w, y + row * cell_h, cell_w, cell_h, item, accent_color)
+
+
 def _render_icon_card(slide, cx, cy, cw, ch, item, accent_color, pad=0.12):
     """Icon (centered, top) + bold title (centered) + description
     (centered) inside a light card panel. Shared by pillar_columns and
@@ -326,26 +344,17 @@ def render_graphic(slide, gtype, data, box):
 
     elif gtype == "pillar_columns":
         cols = [_as_dict(c) for c in data.get("columns") or []]
-        n = max(len(cols), 1)
-        slot_w = w / n
-        for i, col in enumerate(cols):
-            _render_icon_card(slide, x + i * slot_w, y, slot_w, h, col, "963058")
-            rendered_count += 1
+        _render_card_grid(slide, x, y, w, h, cols, "963058", max_cols=4)
+        rendered_count += len(cols)
 
     elif gtype == "icon_grid":
         # Icon + title + description cards, one row when there are 4 or
-        # fewer (matches the manual's "N dimensions" pattern), wrapping
-        # to additional rows only past that.
+        # fewer AND the panel is wide enough — narrower panels (e.g. a
+        # bullets+graphic slide) wrap to fewer columns / more rows so
+        # each card keeps enough width for its text (see MIN_CARD_W).
         items = [_as_dict(i) for i in data.get("items") or []]
-        n = max(len(items), 1)
-        cols = min(n, 4)
-        rows = (n + cols - 1) // cols
-        cell_w = w / cols
-        cell_h = h / rows
-        for i, item in enumerate(items):
-            col, row = i % cols, i // cols
-            _render_icon_card(slide, x + col * cell_w, y + row * cell_h, cell_w, cell_h, item, "244A80")
-            rendered_count += 1
+        _render_card_grid(slide, x, y, w, h, items, "244A80", max_cols=4)
+        rendered_count += len(items)
 
     elif gtype == "illustration":
         name = data.get("name", "")

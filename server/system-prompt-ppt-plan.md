@@ -79,7 +79,7 @@ Pick the icon whose real-world meaning matches the content (e.g. `gavel` for leg
 
 ### Illustration set
 
-Where `graphicType` is `illustration`, `name` must be ONE of these exact values (unDraw, pre-rasterized brand-colored PNGs, minimalist single-accent-color style — anything else is silently dropped, no image shown):
+Where `graphicType` is `illustration`, `name` must be ONE of these exact values (ManyPixels flatline, pre-rasterized brand-colored PNGs, minimalist monoline style — anything else is silently dropped, no image shown):
 
 `online-learning`, `artificial-intelligence`, `teacher`, `data-processing`, `growth-chart`, `security`, `collaboration`, `graduation`, `road-to-knowledge`, `mind-map`
 

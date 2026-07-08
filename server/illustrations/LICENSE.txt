@@ -1,14 +1,28 @@
-Illustrations in this directory are rasterized (recolored accent shape
-to brand hex, PNG, ~1000px wide, preserving each illustration's aspect
-ratio) from unDraw, MIT licensed, via the community mirror
-https://github.com/balazser/undraw-svg-collection (open-source SVGs,
-same MIT terms as the original https://undraw.co).
+Illustrations in this directory are rasterized (dominant line color
+recolored to brand hex, PNG, ~1000px wide, 4:3) from ManyPixels
+Gallery's "Flatline" style — a genuinely single-line/minimal-color
+illustration style (dark line-work + light gray fill + a small fixed
+accent), the closest fit to "minimalist monoline" of the libraries
+evaluated. Fetched via the community mirror
+https://github.com/quentincaffeino/manypixels-illustrations (code MIT;
+illustration assets under ManyPixels' own terms, see
+https://www.manypixels.co/gallery).
 
-Recoloring: only the accent shapes (originally `var(--primary-svg-color)`
-in the source SVG) are recolored to brand hex. Structural grays/darks
-and skin-tone paths are left as-is, matching unDraw's own customization
-model (one primary color, neutral everything else) — the closest fit to
-a "minimalist monoline" look this library offers; unDraw itself is a
-flat-shape style, not literal single-stroke line art.
+ManyPixels' terms: free for commercial and personal use, no
+attribution required. Restricted: do not resell/redistribute the
+illustrations as a standalone pack, or build a competing illustration
+gallery/service around them. This repo embeds a curated set of 10
+inside a document-generation tool (not a redistributed asset pack),
+which is the intended commercial-use case.
+
+Recoloring: only the dominant line/fill color (`#231f20` in the source
+SVG) is recolored to brand hex. Neutral grays/whites and one small
+fixed accent (`#68e1fd`) are left as-is, matching the style's own
+minimal-color design.
 
 Filename pattern: {illustration_name}__{HEXCOLOR}.png
+Illustration name -> ManyPixels flatline source name:
+  online-learning -> OnlineLesson, artificial-intelligence -> ArtificialIntelligence,
+  teacher -> Teacher, data-processing -> DataProcessing, growth-chart -> Growth,
+  security -> Security, collaboration -> TeamBuilding, graduation -> Graduation,
+  road-to-knowledge -> Knowledge, mind-map -> MindMap
