@@ -13,7 +13,15 @@ WORKDIR /app
 # Python + python-pptx — used by server/render_ppt.py to build the
 # corporate PPT with real gradient fills (pptxgenjs has no native
 # multi-stop gradient support).
-RUN apk add --no-cache python3 py3-pip
+#
+# chromium here is Alpine's own (musl-linked) build — Playwright's bundled
+# Chromium downloads are glibc-linked and do not run on Alpine, so
+# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 stops `pip install playwright` (and any
+# `playwright install`) from fetching an incompatible binary; render_epigrafe
+# points at this apk-installed chromium instead (see PLAYWRIGHT_CHROMIUM_PATH).
+RUN apk add --no-cache python3 py3-pip chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium-browser
 COPY server/requirements.txt ./server/
 RUN pip3 install --no-cache-dir --break-system-packages -r server/requirements.txt
 

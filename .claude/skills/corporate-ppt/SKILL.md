@@ -12,28 +12,44 @@ you generate and assembles the final file.
 
 ## Step 0 â get the source material
 
-Accept a PDF, an already-extracted text block, or pasted content covering a
-training unit. Read the whole document before doing anything else â you need
-to see all the epÃ­grafes it contains, not just the first one.
+Accept a PDF, an already-extracted text block, or pasted content. It may
+cover a single unit, or a full curso/acciÃ³n formativa spanning several
+units, each with several epÃ­grafes. Read the whole document before doing
+anything else â you need to see the full unit/epÃ­grafe structure, not just
+the first thing in it.
 
-## Step 1 â ask: one epÃ­grafe, or all of them?
+## Step 1 â ask: how much of it, and how much of each?
 
-**The same source document usually covers a whole unit with several
-epÃ­grafes.** Before generating anything, identify the distinct epÃ­grafes in
-the document (their titles/numbers) and ask the user explicitly:
+**Never assume the caller wants everything, or just one thing â ask.** This
+is a two-part question, and both parts matter before you generate anything:
 
-> This document covers N epÃ­grafes: [list them]. Do you want a deck for just
-> one of them, or one deck per epÃ­grafe for all of them?
+1. **Scope**: identify the units the document contains (their names). If
+   there's more than one, ask the user explicitly:
+   > This document covers the full course/acciÃ³n formativa with N units:
+   > [list them]. Do you want decks for the whole course, or just one unit?
 
-Use `AskUserQuestion` with options like "Just one (pick which)" and "All N â
-generate a separate deck per epÃ­grafe". If the user already named a specific
-epÃ­grafe when they made the request, you can skip the question and confirm
-your read of it instead ("I'll generate the deck for epÃ­grafe 3, '<title>' â
-correct?").
+   Use `AskUserQuestion` with options like "The whole course (all units)"
+   and "Just one unit (pick which)". If there's only one unit in the
+   document, skip this part and confirm your read of it instead.
 
-If "all" is chosen, repeat Steps 2â5 independently **per epÃ­grafe** â each
-epÃ­grafe gets its own slide count decision, its own variant choices, its own
-file. Never blend content from two epÃ­grafes into one deck.
+2. **Depth**: within whichever unit(s) are in scope, identify the distinct
+   epÃ­grafes (their titles/numbers) and ask:
+   > Unit "<name>" has N epÃ­grafes: [list them]. Do you want a deck for
+   > just one, a specific subset, or all N?
+
+   Use `AskUserQuestion` with options like "Just one (pick which)", "A
+   specific subset (tell me which)", and "All N". If the user already named
+   a specific epÃ­grafe (or an explicit count) when they made the request,
+   skip the question and confirm your read of it instead ("I'll generate
+   decks for epÃ­grafes 2â4 of unit '<name>' â correct?").
+
+If scope is "whole course", repeat the depth question **per unit** (a
+"thin" unit and a "rich" unit may warrant different answers) â don't reuse
+one answer across every unit without checking. Whatever the combined scope
+resolves to, repeat Steps 2â5 independently **per epÃ­grafe** â each
+epÃ­grafe gets its own slide count decision, its own variant choices, its
+own file. Never blend content from two epÃ­grafes (or two units) into one
+deck.
 
 ## Step 2 â extract, never invent
 
@@ -92,9 +108,14 @@ already encode this exactly. You only choose section + variant + content per sli
 
 Icon names (use exactly, only these): `lightbulb checklist database target map
 check_circle flag sync rocket shield warning calendar trending_up groups
-balance school gavel star storage`. Pick by real-world meaning (e.g. `gavel`
-for regulatory, `groups` for people/culture, `map` for a research/discovery
-step).
+balance school gavel star storage search clock chat chart_bar key globe book
+briefcase compass link filter mail phone layers money growth settings video
+cloud lock thumbs_up heart eye bell tag folder printer wifi award arrow_right
+building code person`. Pick by real-world meaning (e.g. `gavel` for
+regulatory, `groups` for people/culture, `map` for a research/discovery step,
+`chat` for communication, `key`/`lock` for access/security, `briefcase` for
+business/professional context, `money` for cost/finance, `growth` for
+sustainability/development, `award` for achievement/certification).
 
 Fixed sections' `fields` shapes: `titulo â {title}` Â· `cierre â {title}` (default
 `"Thank you"`) Â· `inicio â {icon, promise}` Â· `resumen â {title, items:
@@ -149,7 +170,8 @@ the fonts installed locally.
 ## Step 8 â filename and delivery
 
 Name each file `E [cÃ³digo]-[nombre certificado]-[mÃ³dulo].pptx` per the unit's
-real metadata (ask if any part is missing from the source). If the user chose
-"all epÃ­grafes" in Step 1, deliver one such file per epÃ­grafe. Hand the
-file(s) back to the user (e.g. via `SendUserFile`) â don't just report success
-without attaching them.
+real metadata (ask if any part is missing from the source). Deliver one file
+per epÃ­grafe actually generated â whether that's one file (single epÃ­grafe),
+several (a subset or a whole unit), or many (a whole course across units).
+Hand the file(s) back to the user (e.g. via `SendUserFile`) â don't just
+report success without attaching them.
