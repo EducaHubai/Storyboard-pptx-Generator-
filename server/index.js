@@ -23,7 +23,14 @@ const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 
 const RENDER_PPT_SCRIPT = path.join(__dirname, "render_ppt.py");
+// "epigrafe" format uses the HTML-first renderer (real Chromium screenshot +
+// editable text overlay) instead of render_ppt.py's native pptx shapes —
+// see server/render_epigrafe/render.py and .claude/skills/corporate-ppt/.
+const RENDER_EPIGRAFE_SCRIPT = path.join(__dirname, "render_epigrafe", "render.py");
 const PYTHON_BIN = process.env.PYTHON_BIN || "python3";
+function resolveRenderScript(format) {
+  return format === "epigrafe" ? RENDER_EPIGRAFE_SCRIPT : RENDER_PPT_SCRIPT;
+}
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -56,22 +63,28 @@ const SCHEMA = fs.readFileSync(
   path.join(__dirname, "storyboard.schema.json"),
   "utf-8"
 );
-// Two pacing formats: "standard" (8–10 slides, 4:30–5:30min) and "micro"
-// (12–18 short slides, ~15s each, one epigraph per slide).
+// Three formats: "standard" (8–10 slides, 4:30–5:30min), "micro" (12–18
+// short slides, ~15s each, one epigraph per slide), and "epigrafe" (12–15
+// slides for a SINGLE epígrafe, 5 layout variants, HTML-first render —
+// see .claude/skills/corporate-ppt/SKILL.md for the full ruleset this
+// mirrors).
 const PPT_PLAN_PROMPT = {
   standard: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-plan.md"), "utf-8"),
   micro: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-plan-micro.md"), "utf-8"),
+  epigrafe: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-plan-epigrafe.md"), "utf-8"),
 };
 const PPT_GENERATE_PROMPT = {
   standard: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-generate.md"), "utf-8"),
   micro: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-generate-micro.md"), "utf-8"),
+  epigrafe: fs.readFileSync(path.join(__dirname, "system-prompt-ppt-generate-epigrafe.md"), "utf-8"),
 };
 const PDF_TO_PLAN_PROMPT = {
   standard: fs.readFileSync(path.join(__dirname, "system-prompt-pdf-to-plan.md"), "utf-8"),
   micro: fs.readFileSync(path.join(__dirname, "system-prompt-pdf-to-plan-micro.md"), "utf-8"),
+  epigrafe: fs.readFileSync(path.join(__dirname, "system-prompt-pdf-to-plan-epigrafe.md"), "utf-8"),
 };
 function resolveFormat(value) {
-  return value === "micro" ? "micro" : "standard";
+  return value === "micro" || value === "epigrafe" ? value : "standard";
 }
 
 // Brand fonts (Rubik, Lato — OFL licensed) embedded into generated .pptx
@@ -202,10 +215,22 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
     fs.unlink(req.file.path, () => {});
 
     const format = resolveFormat(req.body.format);
-    const raw = await callOpenAI(
-      PDF_TO_PLAN_PROMPT[format],
-      `Here is the full content of the course unit:\n\n${pdfText.slice(0, 14000)}\n\nExtract the unit content and generate the slide plan JSON.`
-    );
+    // "epigrafe" format is scoped to one epígrafe per deck. Without
+    // req.body.epigrafe, the prompt runs in discovery mode and returns the
+    // document's full unit → epígrafe structure (as { afo, units: [{ unit,
+    // epigraphs }] }) so the client can ask the user for scope (whole
+    // course vs. one unit) and depth (one epígrafe, a subset, or all),
+    // then call this endpoint again per epígrafe with epigrafe set.
+    const userMessage = format === "epigrafe"
+      ? [
+          `Here is the full content of the training document:\n\n${pdfText.slice(0, 14000)}`,
+          req.body.epigrafe
+            ? `\nTarget epígrafe: ${req.body.epigrafe}\n\nGenerate the slide plan JSON for this epígrafe only (Mode B).`
+            : `\nNo target epígrafe given — return the unit/epígrafe structure found in this document (Mode A).`,
+        ].join("\n")
+      : `Here is the full content of the course unit:\n\n${pdfText.slice(0, 14000)}\n\nExtract the unit content and generate the slide plan JSON.`;
+
+    const raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
     const plan = JSON.parse(raw);
     res.json(plan);
   } catch (err) {
@@ -269,22 +294,29 @@ app.post("/api/ppt-generate", async (req, res) => {
     const generated = JSON.parse(raw);
 
     // Step 2: build .pptx via the Python renderer (python-pptx supports
-    // real multi-stop gradients, which pptxgenjs does not).
+    // real multi-stop gradients, which pptxgenjs does not). "epigrafe"
+    // format uses the HTML-first renderer instead of render_ppt.py.
+    const format = resolveFormat(plan.format);
     const inputPath = `/tmp/ppt-input-${Date.now()}.json`;
     const outPath = `/tmp/ppt-${Date.now()}.pptx`;
     fs.writeFileSync(inputPath, JSON.stringify({ plan, scripts: generated.slides || [] }));
     try {
-      await execFileAsync(PYTHON_BIN, [RENDER_PPT_SCRIPT, inputPath, outPath]);
+      await execFileAsync(PYTHON_BIN, [resolveRenderScript(format), inputPath, outPath]);
     } finally {
       fs.unlink(inputPath, () => {});
     }
 
-    try {
-      await embedFonts(outPath);
-    } catch (fontErr) {
-      // Non-fatal: deliver the pptx with fontFace names set but not
-      // embedded rather than failing the whole request.
-      console.warn("embedFonts failed, shipping pptx without embedded fonts:", fontErr.message);
+    // render_epigrafe/render.py already embeds fonts itself (Python-side,
+    // mirrors this same technique) — running the Node embedFonts() again
+    // on top would duplicate the embeddedFontLst and corrupt the file.
+    if (format !== "epigrafe") {
+      try {
+        await embedFonts(outPath);
+      } catch (fontErr) {
+        // Non-fatal: deliver the pptx with fontFace names set but not
+        // embedded rather than failing the whole request.
+        console.warn("embedFonts failed, shipping pptx without embedded fonts:", fontErr.message);
+      }
     }
 
     // Step 3: send pptx as download + metadata in header
@@ -292,7 +324,8 @@ app.post("/api/ppt-generate", async (req, res) => {
     const scriptHeader = Buffer.from(JSON.stringify(generated.slides || [])).toString("base64");
     res.setHeader("X-Educalab-Meta", metaHeader);
     res.setHeader("X-Script-Data", scriptHeader);
-    res.download(outPath, `${buildUnitFileName(plan)}.pptx`, () => {
+    const fileName = format === "epigrafe" ? buildEpigrafeFileName(plan) : buildUnitFileName(plan);
+    res.download(outPath, `${fileName}.pptx`, () => {
       fs.unlink(outPath, () => {});
     });
   } catch (err) {
@@ -556,6 +589,18 @@ function slugify(str) {
 function buildUnitFileName(plan) {
   const clean = (s) => (s || "").replace(/[^a-zA-Z0-9]+/g, "");
   return `MC-${clean(plan.afo) || "AFO"}-${clean(plan.unit) || "Unidad"}`;
+}
+
+// "epigrafe" format's naming convention: "E [código]-[nombre certificado]-[módulo]".
+// The plan doesn't carry separate "codigo"/"certificado" fields yet,
+// so this approximates with epigrafe-unit-afo; pass plan.codigo/plan.certificado
+// from the client once those are collected to match the convention exactly.
+function buildEpigrafeFileName(plan) {
+  const clean = (s) => (s || "").replace(/[^a-zA-Z0-9]+/g, "");
+  const codigo = clean(plan.codigo) || clean(plan.epigrafe) || "Epigrafe";
+  const certificado = clean(plan.certificado) || clean(plan.unit) || "Unidad";
+  const modulo = clean(plan.afo) || "Modulo";
+  return `E ${codigo}-${certificado}-${modulo}`;
 }
 
 // ────────────────────────────────────────────────────────────
