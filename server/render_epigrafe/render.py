@@ -93,9 +93,9 @@ EXTRACT_JS = """
 def find_chrome():
     candidates = [
         os.environ.get("PLAYWRIGHT_CHROMIUM_PATH"),
-        # Alpine's own apk chromium package (musl-linked) â the production
-        # Dockerfile installs this since Playwright's bundled Chromium
-        # downloads are glibc-linked and don't run on Alpine.
+        # System-installed Chromium, if present — otherwise falls through
+        # to Playwright's own bundled download (see PLAYWRIGHT_BROWSERS_PATH
+        # below), which is the normal case on the Debian-based production image.
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
     ]
