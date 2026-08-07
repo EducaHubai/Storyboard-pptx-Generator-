@@ -50,6 +50,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "unit": "string",
   "epigrafe": "string — the target epígrafe's name/number",
   "afo": "string",
+  "format": "epigrafe",
   "totalSlides": number,
   "contentWarning": "string or null",
   "slides": [

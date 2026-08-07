@@ -40,6 +40,7 @@ Return ONLY valid JSON, no markdown, no explanation. Schema:
   "unit": "string — unit name",
   "epigrafe": "string — this epígrafe's name/number",
   "afo": "string — acción formativa / module name",
+  "format": "epigrafe",
   "totalSlides": number,
   "contentWarning": "string or null — set only if content couldn't reach 12 slides honestly",
   "slides": [

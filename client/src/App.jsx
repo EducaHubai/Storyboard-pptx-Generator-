@@ -87,12 +87,28 @@ function buildMockPptResult(plan) {
 }
 
 
-const PPT_SCREENS = { INPUT: "ppt_input", PLAN: "ppt_plan", RESULT: "ppt_result" };
+const PPT_SCREENS = {
+  INPUT: "ppt_input",
+  PLAN: "ppt_plan",
+  RESULT: "ppt_result",
+  SCOPE: "ppt_scope",
+  BATCH_RESULT: "ppt_batch_result",
+};
+
+// Reads the filename the server chose (Content-Disposition) so batch
+// downloads use the real "E [código]-..." name instead of a client guess.
+function filenameFromContentDisposition(header, fallback) {
+  const match = header && /filename="?([^"]+)"?/i.exec(header);
+  return match ? match[1] : fallback;
+}
 
 export default function App() {
   const [pptScreen, setPptScreen] = useState(PPT_SCREENS.INPUT);
   const [pptPlan, setPptPlan] = useState(null);
   const [pptResult, setPptResult] = useState(null);
+  const [pptScope, setPptScope] = useState(null); // { afo, units, file } — epigrafe format discovery
+  const [batchProgress, setBatchProgress] = useState(null); // { current, total, label }
+  const [batchResults, setBatchResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -106,6 +122,30 @@ export default function App() {
       setPptPlan(buildMockPptPlan({ epigraphs: ["Introduction", "SMART Framework", "Bloom's Taxonomy", "Prompt Engineering"], unit: file.name.replace(".pdf", ""), afo: "MC-B1 · Instructional Design with AI" }));
       setPptScreen(PPT_SCREENS.PLAN);
       setLoading(false);
+      return;
+    }
+
+    // "epigrafe" format: the document may cover several units, each with
+    // several epígrafes, and one deck gets generated per epígrafe — so
+    // the first call is discovery-only (no target epígrafe), returning the
+    // unit/epígrafe structure for the user to pick a scope from.
+    if (format === "epigrafe") {
+      try {
+        const formData = new FormData();
+        formData.append("pdf", file);
+        formData.append("format", "epigrafe");
+        const res = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: formData });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const discovery = await res.json();
+        setPptScope({ ...discovery, file });
+        setPptScreen(PPT_SCREENS.SCOPE);
+      } catch (e) {
+        setError(e.message === "Failed to fetch"
+          ? "Could not reach the backend. Is the server running?"
+          : e.message);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -126,6 +166,58 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+  // Scope confirmed (all units, or a specific selection) → generate one
+  // deck per épigrafe in the selected units, straight through to download
+  // (no per-deck review — approved as the flow for this format).
+  const handleEpigrafeBatchGenerate = useCallback(async (units) => {
+    setLoading(true);
+    setError(null);
+    setBatchResults(null);
+
+    const jobs = [];
+    units.forEach((u) => (u.epigraphs || []).forEach((epigrafe) => jobs.push({ unit: u.unit, epigrafe })));
+
+    const results = [];
+    for (let i = 0; i < jobs.length; i++) {
+      const { unit, epigrafe } = jobs[i];
+      setBatchProgress({ current: i + 1, total: jobs.length, label: `${unit} — ${epigrafe}` });
+      try {
+        const planFormData = new FormData();
+        planFormData.append("pdf", pptScope.file);
+        planFormData.append("format", "epigrafe");
+        planFormData.append("epigrafe", epigrafe);
+        const planRes = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: planFormData });
+        if (!planRes.ok) throw new Error(`Plan step failed (${planRes.status})`);
+        const plan = await planRes.json();
+
+        const genRes = await fetch(`${API_BASE}/ppt-generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan }),
+        });
+        if (!genRes.ok) throw new Error(`Generate step failed (${genRes.status})`);
+
+        const educalabRaw = genRes.headers.get("X-Educalab-Meta");
+        const educalab = educalabRaw ? JSON.parse(atob(educalabRaw)) : null;
+        const blob = await genRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const fileName = filenameFromContentDisposition(
+          genRes.headers.get("Content-Disposition"),
+          `${epigrafe}.pptx`
+        );
+
+        results.push({ unit, epigrafe, plan, educalab, blobUrl, fileName, error: null });
+      } catch (e) {
+        results.push({ unit, epigrafe, error: e.message === "Failed to fetch" ? "Could not reach the backend." : e.message });
+      }
+    }
+
+    setBatchResults(results);
+    setBatchProgress(null);
+    setPptScreen(PPT_SCREENS.BATCH_RESULT);
+    setLoading(false);
+  }, [pptScope]);
 
   const handleManualPlan = useCallback(async ({ unit, afo, avatar, epigraphs, format }) => {
     setLoading(true);
@@ -201,6 +293,9 @@ export default function App() {
   const resetPpt = useCallback(() => {
     setPptPlan(null);
     setPptResult(null);
+    setPptScope(null);
+    setBatchResults(null);
+    setBatchProgress(null);
     setPptScreen(PPT_SCREENS.INPUT);
     setError(null);
   }, []);
@@ -230,6 +325,18 @@ export default function App() {
         {pptScreen === PPT_SCREENS.RESULT && pptResult && (
           <PptResultScreen result={pptResult} onStartOver={resetPpt} />
         )}
+        {pptScreen === PPT_SCREENS.SCOPE && pptScope && (
+          <ScopeScreen
+            scope={pptScope}
+            onBack={() => setPptScreen(PPT_SCREENS.INPUT)}
+            onGenerate={handleEpigrafeBatchGenerate}
+            loading={loading}
+            progress={batchProgress}
+          />
+        )}
+        {pptScreen === PPT_SCREENS.BATCH_RESULT && batchResults && (
+          <BatchResultScreen results={batchResults} onStartOver={resetPpt} />
+        )}
       </main>
       <div style={styles.footerGradientBar} />
     </div>
@@ -248,7 +355,13 @@ function TopBar({ screen }) {
     { key: PPT_SCREENS.PLAN, label: "Plan" },
     { key: PPT_SCREENS.RESULT, label: "Result" },
   ];
-  const activeIndex = steps.findIndex((s) => s.key === screen);
+  // SCOPE/BATCH_RESULT belong to the epigrafe flow, which swaps the Plan
+  // step for a scope-picker but keeps the same 3-dot progress indicator.
+  const activeIndex = screen === PPT_SCREENS.SCOPE
+    ? 1
+    : screen === PPT_SCREENS.BATCH_RESULT
+      ? 2
+      : steps.findIndex((s) => s.key === screen);
 
   return (
     <header style={styles.topbar}>
@@ -303,7 +416,9 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
         <h1 style={styles.h1}>{mode === "pdf" ? "Upload the course unit PDF" : "Enter the unit epigraphs"}</h1>
         <p style={styles.lead}>
           {mode === "pdf"
-            ? "Drop the temario or training material PDF. The AI will extract the content, propose an 8–10 slide plan, and wait for your approval before generating anything."
+            ? format === "epigrafe"
+              ? "Drop the training document — one unit or a full course with several units. The AI will find every épigrafe in it, then let you choose which units/épigrafes to generate a deck for."
+              : "Drop the temario or training material PDF. The AI will extract the content, propose an 8–10 slide plan, and wait for your approval before generating anything."
             : "Type the unit's epigraph titles (e.g. transcribed from an image). The AI will propose an 8–10 slide plan and wait for your approval."}
         </p>
         <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "center" }}>
@@ -315,7 +430,13 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
           </button>
           <button
             style={{ ...styles.graphicChip, ...(mode === "manual" ? styles.graphicChipActive : {}) }}
-            onClick={() => setMode("manual")}
+            onClick={() => {
+              setMode("manual");
+              // Epigrafe format needs the full source document to extract
+              // real per-section content from — it can't work off typed
+              // epigraph titles alone.
+              if (format === "epigrafe") setFormat("standard");
+            }}
           >
             Type epigraphs
           </button>
@@ -323,7 +444,7 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
 
         <div style={{ marginTop: 20 }}>
           <p style={{ ...styles.dropSubtext, marginBottom: 8 }}>Pacing format</p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
             <button
               style={{ ...styles.graphicChip, ...(format === "standard" ? styles.graphicChipActive : {}) }}
               onClick={() => setFormat("standard")}
@@ -338,6 +459,15 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
             >
               Microlearning (12–18 slides)
             </button>
+            {mode === "pdf" && (
+              <button
+                style={{ ...styles.graphicChip, ...(format === "epigrafe" ? styles.graphicChipActive : {}) }}
+                onClick={() => setFormat("epigrafe")}
+                title="One 12–15 slide deck per épigrafe — asks which units/épigrafes to generate before running"
+              >
+                Epígrafe (one deck per section)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -356,7 +486,9 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
           {loading ? (
             <>
               <Spinner />
-              <p style={styles.dropText}>Reading the document and drafting the slide plan…</p>
+              <p style={styles.dropText}>
+                {format === "epigrafe" ? "Reading the document and mapping its units/épigrafes…" : "Reading the document and drafting the slide plan…"}
+              </p>
               <p style={styles.dropSubtext}>This usually takes 15–30 seconds.</p>
             </>
           ) : (
@@ -372,7 +504,9 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
                 <input type="file" accept="application/pdf" style={{ display: "none" }}
                   onChange={(e) => e.target.files[0] && onUpload(e.target.files[0], format)} />
               </label>
-              <p style={{ ...styles.dropSubtext, marginTop: 8 }}>PDF only · max one unit per upload</p>
+              <p style={{ ...styles.dropSubtext, marginTop: 8 }}>
+                {format === "epigrafe" ? "PDF only · one or more units" : "PDF only · max one unit per upload"}
+              </p>
             </>
           )}
         </div>
@@ -618,6 +752,181 @@ function PptResultScreen({ result, onStartOver }) {
       )}
 
       <div style={{ textAlign: "center" }}>
+        <button style={styles.linkBtn} onClick={onStartOver}>Start over with a new PDF</button>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   EPIGRAFE SCREEN 2 — SCOPE (which units/épigrafes to generate)
+────────────────────────────────────────────────────────── */
+function ScopeScreen({ scope, onBack, onGenerate, loading, progress }) {
+  const units = scope.units || [];
+  const [selectMode, setSelectMode] = useState(false); // false = "create all"
+  const [selectedUnits, setSelectedUnits] = useState(() => new Set(units.map((u) => u.unit)));
+
+  const toggleUnit = (unitName) => {
+    setSelectedUnits((prev) => {
+      const next = new Set(prev);
+      if (next.has(unitName)) next.delete(unitName); else next.add(unitName);
+      return next;
+    });
+  };
+
+  const unitsToUse = selectMode ? units.filter((u) => selectedUnits.has(u.unit)) : units;
+  const totalEpigraphs = unitsToUse.reduce((sum, u) => sum + (u.epigraphs || []).length, 0);
+
+  return (
+    <div style={styles.wideScreen}>
+      <div style={styles.screenHeader}>
+        <span style={styles.eyebrow}>Step 2 of 3 — Choose scope</span>
+        <h1 style={styles.h1}>{scope.afo || "This document"}</h1>
+        <p style={styles.lead}>
+          Found {units.length} unit{units.length === 1 ? "" : "s"}. Generate a deck for every épigrafe, or pick specific units.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <button
+            style={{ ...styles.graphicChip, ...(!selectMode ? styles.graphicChipActive : {}) }}
+            onClick={() => setSelectMode(false)}
+            disabled={loading}
+          >
+            Create all units
+          </button>
+          <button
+            style={{ ...styles.graphicChip, ...(selectMode ? styles.graphicChipActive : {}) }}
+            onClick={() => setSelectMode(true)}
+            disabled={loading}
+          >
+            Select specific units
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {units.map((u) => {
+          const checked = selectMode ? selectedUnits.has(u.unit) : true;
+          const epigraphs = u.epigraphs || [];
+          return (
+            <div
+              key={u.unit}
+              onClick={() => selectMode && !loading && toggleUnit(u.unit)}
+              style={{
+                border: `1px solid ${checked ? BRAND.burdeos : BRAND.border}`,
+                borderRadius: 8,
+                padding: "16px 20px",
+                cursor: selectMode ? "pointer" : "default",
+                background: checked ? "rgba(150,48,88,0.04)" : BRAND.white,
+                opacity: selectMode && !checked ? 0.55 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                transition: "all 150ms ease",
+              }}
+            >
+              {selectMode && (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleUnit(u.unit)}
+                  style={{ width: 16, height: 16, flexShrink: 0 }}
+                />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: "'Rubik', sans-serif", fontSize: 15, fontWeight: 500, color: BRAND.negro }}>{u.unit}</div>
+                <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>
+                  {epigraphs.length} épigrafe{epigraphs.length === 1 ? "" : "s"}
+                  {epigraphs.length > 0 ? `: ${epigraphs.join(" · ")}` : ""}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={styles.footerBar}>
+        <button style={styles.secondaryBtn} onClick={onBack} disabled={loading}>← Back to input</button>
+        <button
+          style={{ ...styles.primaryBtn, opacity: loading || totalEpigraphs === 0 ? 0.5 : 1 }}
+          onClick={() => onGenerate(unitsToUse)}
+          disabled={loading || totalEpigraphs === 0}
+        >
+          {loading ? "Generating decks…" : `Generate ${totalEpigraphs} deck${totalEpigraphs === 1 ? "" : "s"} →`}
+        </button>
+      </div>
+      {loading && progress && (
+        <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 12, color: BRAND.textSecondary, fontFamily: "'Lato', sans-serif", fontSize: 13 }}>
+          <Spinner />
+          <span>Deck {progress.current} of {progress.total} — {progress.label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   EPIGRAFE SCREEN 3 — BATCH RESULT (one download per épigrafe)
+────────────────────────────────────────────────────────── */
+function BatchResultScreen({ results, onStartOver }) {
+  const successCount = results.filter((r) => !r.error).length;
+
+  const downloadAll = () => {
+    results.forEach((r) => {
+      if (r.error) return;
+      const a = document.createElement("a");
+      a.href = r.blobUrl;
+      a.download = r.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+  };
+
+  return (
+    <div style={styles.wideScreen}>
+      <div style={styles.screenHeader}>
+        <span style={styles.eyebrow}>Step 3 of 3 — Done</span>
+        <h1 style={styles.h1}>{successCount} of {results.length} deck{results.length === 1 ? "" : "s"} generated</h1>
+        {successCount > 1 && (
+          <button style={{ ...styles.secondaryBtn, marginTop: 12 }} onClick={downloadAll}>⬇ Download all {successCount}</button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {results.map((r, i) => (
+          <div
+            key={i}
+            style={{
+              border: `1px solid ${r.error ? "rgba(233,106,105,0.4)" : BRAND.border}`,
+              borderRadius: 8,
+              padding: "16px 20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "'Rubik', sans-serif", fontSize: 14, fontWeight: 500, color: BRAND.negro }}>{r.epigrafe}</div>
+              <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.unit}</div>
+              {r.error && (
+                <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.rosa, marginTop: 4 }}>⚠ {r.error}</div>
+              )}
+              {!r.error && r.plan?.contentWarning && (
+                <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.textSecondary, marginTop: 4, fontStyle: "italic" }}>
+                  ⓘ {r.plan.contentWarning}
+                </div>
+              )}
+            </div>
+            {!r.error && (
+              <a href={r.blobUrl} download={r.fileName} style={{ ...styles.downloadBtn, padding: "10px 20px", fontSize: 13 }}>⬇ Download</a>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 32 }}>
         <button style={styles.linkBtn} onClick={onStartOver}>Start over with a new PDF</button>
       </div>
     </div>
