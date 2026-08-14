@@ -37,7 +37,10 @@ everything must come from what this epígrafe actually says in the source.
   Puntos Clave combined must total 8–11 slides (e.g. 4+4, 5+4, 5+5 — not
   3+3, which only reaches 10 total).
 - Within `concepto` and within `puntos_clave`: never repeat the same
-  `variant` on two consecutive slides of that section.
+  `variant` on two consecutive slides of that section — but pick each
+  variant because it's the genuine best fit for that slide's real content
+  (see the "use when" column below), never by mechanically rotating
+  through the list just to satisfy the no-repeat rule.
 - Max ~20 visible words per slide, max 3 ideas/bullets.
 - Language of all slide content: ENGLISH.
 
@@ -80,9 +83,15 @@ Valid `section` values: `titulo`, `inicio`, `concepto`, `puntos_clave`, `resumen
 | `flujo_pasos` | a process, sequence, or ordered steps | `{ "title", "steps": [{ "icon", "title", "text" }] (3-4) }` |
 | `panel_tarjetas` | a list of tools/applications, no hierarchy/sequence | `{ "icon", "title", "cards": [{ "icon", "text" }] (2-4) }` |
 
-Icon set (use ONLY these, anything else is silently dropped): `lightbulb
-checklist database target map check_circle flag sync rocket shield warning
-calendar trending_up groups balance school gavel star storage search clock
-chat chart_bar key globe book briefcase compass link filter mail phone
-layers money growth settings video cloud lock thumbs_up heart eye bell tag
-folder printer wifi award arrow_right building code person`.
+Icon set (the response schema restricts every icon field to exactly these
+values, so pick the best-fitting one for each slide's real meaning, not
+just any valid one): `lightbulb checklist database target map check_circle
+flag sync rocket shield warning calendar trending_up groups balance school
+gavel star storage search clock chat chart_bar key globe book briefcase
+compass link filter mail phone layers money growth settings video cloud
+lock thumbs_up heart eye bell tag folder printer wifi award arrow_right
+building code person`. Pick by real-world meaning (`gavel` for
+regulatory/legal, `groups` for people/culture, `map` for a research/
+discovery step, `rocket` for launch/scale, `shield`/`lock` for security,
+`money` for cost/finance, `award` for achievement/certification) — never
+default to `lightbulb` unless the slide is genuinely about an idea/insight.

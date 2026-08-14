@@ -31,6 +31,7 @@ const PYTHON_BIN = process.env.PYTHON_BIN || "python3";
 function resolveRenderScript(format) {
   return format === "epigrafe" ? RENDER_EPIGRAFE_SCRIPT : RENDER_PPT_SCRIPT;
 }
+const { EPIGRAFE_PLAN_SCHEMA } = require("./epigrafe-plan-schema");
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -53,6 +54,28 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 4000) {
   });
   const raw = response.choices[0].message.content || "";
   return raw.replace(/^```json\s*|\s*```$/g, "").trim();
+}
+
+// Structured Outputs variant of callOpenAI — passes a strict JSON Schema
+// so the API itself rejects any value outside an enum (e.g. an icon name
+// render_epigrafe/icons.py doesn't know, which would otherwise silently
+// fall back to a generic lightbulb instead of erroring). Used for the
+// "epigrafe" format's plan step, where icon/section/variant fidelity is
+// what makes the output match the corporate-ppt Skill's graphic design.
+async function callOpenAIStructured(systemPrompt, userContent, schema, schemaName, maxTokens = 6000) {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: schemaName, strict: true, schema },
+    },
+  });
+  return response.choices[0].message.content || "";
 }
 
 const SYSTEM_PROMPT = fs.readFileSync(
@@ -230,7 +253,26 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
         ].join("\n")
       : `Here is the full content of the course unit:\n\n${pdfText.slice(0, 14000)}\n\nExtract the unit content and generate the slide plan JSON.`;
 
-    const raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
+    // Mode B (a specific épigrafe targeted) is the only branch where the
+    // model picks icon/section/variant names, so it's the only one that
+    // benefits from Structured Outputs enforcement. Mode A (discovery) and
+    // the other formats just return free-text titles — plain callOpenAI.
+    let raw;
+    if (format === "epigrafe" && req.body.epigrafe) {
+      try {
+        raw = await callOpenAIStructured(
+          PDF_TO_PLAN_PROMPT[format],
+          userMessage,
+          EPIGRAFE_PLAN_SCHEMA,
+          "epigrafe_plan"
+        );
+      } catch (structuredErr) {
+        console.warn("Structured Outputs call failed, falling back to plain JSON parsing:", structuredErr.message);
+        raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
+      }
+    } else {
+      raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
+    }
     const plan = JSON.parse(raw);
     res.json(plan);
   } catch (err) {
