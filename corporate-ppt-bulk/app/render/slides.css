@@ -1,0 +1,149 @@
+/* —— Slide canvas base (1920x1080 = 10 x 5.625in @ 192px/in) —— */
+.slide-canvas {
+  width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  font-family: "Lato", sans-serif; background: #FFFFFF; box-sizing: border-box;
+}
+.slide-canvas * { box-sizing: border-box; }
+.slide-canvas .gradient-bar {
+  position: absolute; left: 0; bottom: 0; width: 1920px; height: 28px;
+  background: linear-gradient(90deg, #60BFB8 0%, #2E7ABE 25%, #244A80 50%, #963058 80%, #E96A73 100%);
+}
+.slide-canvas .accent-rail {
+  position: absolute; left: 0; top: 0; width: 12px; height: 1080px;
+  background: var(--accent, #244A80);
+}
+.slide-canvas .section-label { position: absolute; left: 72px; top: 56px; display: flex; align-items: center; gap: 14px; }
+.slide-canvas .section-label .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent, #244A80); }
+.slide-canvas .section-label span {
+  font-family: "Lato", sans-serif; font-weight: 700; font-size: 21px;
+  letter-spacing: 3px; color: var(--accent, #244A80); text-transform: uppercase;
+}
+.slide-canvas .heading {
+  position: absolute; left: 72px; top: 108px; width: 1776px;
+  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 52px;
+  color: #202020; letter-spacing: -0.3px; line-height: 1.2;
+}
+.slide-canvas .card-shadow {
+  box-shadow: 0 2px 6px rgba(32,32,32,0.05), 0 30px 60px -24px var(--accent-shadow, rgba(36,74,128,0.22));
+}
+
+/* —— Título / Cierre : full brand gradient —— */
+.slide-canvas.sec-titulo, .slide-canvas.sec-cierre {
+  background: linear-gradient(135deg, #60BFB8 0%, #2E7ABE 25%, #244A80 50%, #963058 80%, #E96A73 100%);
+}
+.slide-canvas.sec-cierre { background: linear-gradient(135deg, #E96A73 0%, #963058 20%, #244A80 50%, #2E7ABE 75%, #60BFB8 100%); }
+.slide-canvas.sec-titulo .top-line, .slide-canvas.sec-cierre .bottom-line {
+  position: absolute; left: 0; width: 1920px; height: 8px; background: rgba(255,255,255,0.9);
+}
+.slide-canvas.sec-titulo .top-line { top: 0; }
+.slide-canvas.sec-cierre .bottom-line { bottom: 0; }
+.slide-canvas.sec-titulo .big-title, .slide-canvas.sec-cierre .big-title {
+  position: absolute; left: 140px; right: 140px; top: 440px;
+  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 82px;
+  color: #FFFFFF; text-align: center; line-height: 1.2;
+  text-shadow: 0 12px 32px rgba(0,0,0,0.18);
+}
+
+/* —— Inicio : teal panel ≥30% —— */
+.slide-canvas.sec-inicio { background: #FFFFFF; }
+.slide-canvas.sec-inicio .panel {
+  position: absolute; left: 0; top: 0; width: 750px; height: 1080px;
+  background: linear-gradient(160deg, #60BFB8 0%, #3FA79F 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.slide-canvas.sec-inicio .panel .badge {
+  width: 260px; height: 260px; border-radius: 50%; background: rgba(255,255,255,0.14);
+  display: flex; align-items: center; justify-content: center; color: #FFFFFF;
+}
+.slide-canvas.sec-inicio .badge svg { width: 120px; height: 120px; }
+.slide-canvas.sec-inicio .content { position: absolute; left: 830px; right: 100px; top: 0; height: 1080px; display: flex; flex-direction: column; justify-content: center; }
+.slide-canvas.sec-inicio .kicker { font-family: "Lato", sans-serif; font-weight: 700; font-size: 21px; letter-spacing: 3px; color: #60BFB8; text-transform: uppercase; margin-bottom: 24px; }
+.slide-canvas.sec-inicio .promise { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; }
+
+/* —— Resumen : Burdeos recap grid —— */
+.slide-canvas.sec-resumen { background: #963058; }
+.slide-canvas.sec-resumen .kicker { position: absolute; left: 72px; top: 64px; font-family: "Lato", sans-serif; font-weight: 700; font-size: 21px; letter-spacing: 3px; color: rgba(255,255,255,0.75); text-transform: uppercase; }
+.slide-canvas.sec-resumen .heading { color: #FFFFFF; top: 100px; font-size: 50px; }
+.slide-canvas.sec-resumen .grid { position: absolute; left: 72px; top: 250px; width: 1776px; height: 730px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.slide-canvas.sec-resumen .grid.count-3, .slide-canvas.sec-resumen .grid.count-1 { grid-template-rows: 1fr 1fr; }
+.slide-canvas.sec-resumen .r-card { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.14); border-radius: 24px; padding: 44px 48px; display: flex; align-items: center; gap: 36px; }
+.slide-canvas.sec-resumen .r-card .badge { flex: none; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; color: #FFFFFF; }
+.slide-canvas.sec-resumen .r-card p { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 29px; color: #FFFFFF; margin: 0; line-height: 1.35; }
+
+/* —— Concepto / Puntos Clave shared chrome —— */
+.slide-canvas.sec-concepto, .slide-canvas.sec-puntos_clave { background: #FFFFFF; }
+.slide-canvas .glow {
+  position: absolute; top: -420px; right: -420px; width: 1000px; height: 1000px; border-radius: 50%;
+  background: radial-gradient(circle, var(--glow, rgba(96,191,184,0.16)) 0%, rgba(96,191,184,0) 70%);
+}
+
+/* Variant: numero_hero */
+.v-numero-hero .hero-number {
+  position: absolute; left: -46px; top: 40px; font-family: "Rubik", sans-serif; font-weight: 700; font-size: 620px;
+  line-height: 1; user-select: none; background: linear-gradient(160deg, var(--accent, #244A80) 0%, #2E7ABE 45%, #60BFB8 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; opacity: 0.16;
+}
+.v-numero-hero .heading { left: 420px; width: 1430px; top: 175px; }
+.v-numero-hero .rule { position: absolute; left: 420px; top: 320px; width: 120px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent, #244A80), #2E7ABE); }
+.v-numero-hero .cards { position: absolute; left: 72px; top: 420px; width: 1776px; height: 460px; display: flex; gap: 44px; }
+.v-numero-hero .card { flex: 1; background: #FFFFFF; border-radius: 28px; padding: 52px 44px 40px; display: flex; flex-direction: column; align-items: center; text-align: center; border-top: 5px solid var(--accent, #244A80); }
+.v-numero-hero .card .badge { width: 132px; height: 132px; border-radius: 50%; background: var(--accent-tint, rgba(36,74,128,0.08)); display: flex; align-items: center; justify-content: center; margin-bottom: 36px; color: var(--accent, #244A80); }
+.v-numero-hero .card p { font-family: "Lato", sans-serif; font-size: 29px; color: #202020; margin: 0; line-height: 1.45; }
+
+/* Variant: tarjeta_destacada */
+.v-tarjeta .row { position: absolute; left: 72px; top: 210px; width: 1776px; height: 670px; display: flex; gap: 40px; }
+.v-tarjeta .main-card {
+  flex: 0 0 60%; background: var(--accent, #244A80); border-radius: 28px; padding: 64px 56px; color: #FFFFFF;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.v-tarjeta .main-card .badge { width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; margin-bottom: 32px; }
+.v-tarjeta .main-card .phrase { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 40px; line-height: 1.3; margin: 0 0 20px; }
+.v-tarjeta .main-card .text { font-family: "Lato", sans-serif; font-size: 22px; line-height: 1.55; opacity: 0.92; margin: 0; }
+.v-tarjeta .secondary-col { flex: 1; display: flex; flex-direction: column; gap: 32px; }
+.v-tarjeta .sec-card {
+  flex: 1; background: var(--accent-tint, rgba(36,74,128,0.07)); border-radius: 22px; padding: 34px 32px;
+  display: flex; align-items: center; gap: 24px;
+}
+.v-tarjeta .sec-card .badge { flex: none; width: 66px; height: 66px; border-radius: 50%; background: #FFFFFF; display: flex; align-items: center; justify-content: center; color: var(--accent, #244A80); }
+.v-tarjeta .sec-card p { font-family: "Lato", sans-serif; font-size: 21px; color: #202020; margin: 0; line-height: 1.4; }
+
+/* Variant: mito_realidad */
+.v-mito .rows { position: absolute; left: 72px; top: 210px; width: 1776px; height: 670px; display: flex; flex-direction: column; gap: 26px; }
+.v-mito .row { flex: 1; display: flex; gap: 26px; }
+.v-mito .col { flex: 1; border-radius: 22px; padding: 30px 40px; display: flex; align-items: center; gap: 26px; }
+.v-mito .col.myth { background: #F1F1EF; }
+.v-mito .col.reality { background: var(--accent, #244A80); }
+.v-mito .col .badge { flex: none; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.v-mito .col.myth .badge { background: #E2E1DD; color: #77746C; }
+.v-mito .col.reality .badge { background: rgba(255,255,255,0.18); color: #FFFFFF; }
+.v-mito .col .lbl { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; margin: 0 0 4px; }
+.v-mito .col.myth .lbl { color: #8B8880; }
+.v-mito .col.reality .lbl { color: rgba(255,255,255,0.75); }
+.v-mito .col p.txt { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 24px; margin: 0; line-height: 1.3; }
+.v-mito .col.myth p.txt { color: #55524B; }
+.v-mito .col.reality p.txt { color: #FFFFFF; }
+
+/* Variant: flujo_pasos */
+.v-flujo .flow { position: absolute; left: 72px; top: 340px; width: 1776px; height: 560px; display: flex; align-items: center; }
+.v-flujo .step { flex: 1; background: #FFFFFF; border-radius: 24px; padding: 48px 34px 40px; text-align: center; position: relative; }
+.v-flujo .step .num {
+  position: absolute; top: -34px; left: 50%; transform: translateX(-50%); width: 68px; height: 68px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent, #2E7ABE), #244A80); color: #FFFFFF;
+  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 30px; display: flex; align-items: center; justify-content: center;
+}
+.v-flujo .step .badge { color: var(--accent, #2E7ABE); margin: 30px 0 24px; display: flex; justify-content: center; }
+.v-flujo .step h3 { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 27px; color: #202020; margin: 0 0 12px; }
+.v-flujo .step p { font-family: "Lato", sans-serif; font-size: 20px; color: #555; margin: 0; line-height: 1.4; }
+.v-flujo .arrow { flex: 0 0 60px; display: flex; align-items: center; justify-content: center; color: var(--accent, #2E7ABE); }
+
+/* Variant: panel_tarjetas */
+.v-panel .side-panel {
+  position: absolute; left: 0; top: 0; width: 620px; height: 1080px; background: var(--accent, #244A80);
+  display: flex; align-items: center; justify-content: center; color: #FFFFFF;
+}
+.v-panel .side-panel .ring { width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; }
+.v-panel .heading { left: 700px; width: 1150px; top: 108px; }
+.v-panel .stack { position: absolute; left: 700px; top: 240px; width: 1150px; height: 640px; display: flex; flex-direction: column; gap: 22px; }
+.v-panel .stack-card { flex: 1; background: #FFFFFF; border-radius: 20px; padding: 0 40px; display: flex; align-items: center; gap: 28px; }
+.v-panel .stack-card .badge { flex: none; width: 68px; height: 68px; border-radius: 50%; background: var(--accent-tint, rgba(36,74,128,0.08)); display: flex; align-items: center; justify-content: center; color: var(--accent, #244A80); }
+.v-panel .stack-card p { font-family: "Lato", sans-serif; font-size: 24px; color: #202020; margin: 0; }
