@@ -415,26 +415,12 @@ def render_slide(prs, slide_data):
             add_text(slide, 0.8, 3.2, 8.4, 0.7, subtitle, font="Lato", size=18, color="FFFFFF",
                       align=PP_ALIGN.CENTER)
 
-        # Illustration on resumen only — título/cierre stay minimal per
-        # the manual's design guide (§7: "Mínimo; solo título y
-        # subtítulo" / "Mínimo; limpio y claro"). No gray panel here
-        # (unlike light-bg graphics): it's decorative art directly on
-        # the brand color, not a data diagram needing a legibility panel.
-        show_illustration = section == "resumen" and graphic_type == "illustration"
-        bullet_w = 4.6 if show_illustration else 7
-        bullet_x = 0.8 if show_illustration else 1.5
+        # Título/inicio/resumen/cierre all stay minimal per the manual's
+        # design guide (§7: "Mínimo; solo título y subtítulo" / "Mínimo;
+        # limpio y claro") — no illustration on any dark-bg section.
         for i, bullet in enumerate(bullets):
-            add_text(slide, bullet_x, 2.8 + i * 0.72, bullet_w, 0.65, f"• {bullet}",
-                      font="Lato", size=18, color="FFFFFF",
-                      align=PP_ALIGN.LEFT if show_illustration else PP_ALIGN.CENTER)
-
-        if show_illustration:
-            # White, per §6.3: text/art on a brand-color background is
-            # always white — overrides any accentColor GPT-4o picked.
-            illus_data = dict(slide_data.get("graphicData") or {})
-            illus_data["accentColor"] = "FFFFFF"
-            illus_box = {"x": 5.6, "y": 1.6, "w": 3.6, "h": 3.6}
-            render_graphic(slide, "illustration", illus_data, illus_box)
+            add_text(slide, 1.5, 2.8 + i * 0.72, 7, 0.65, f"• {bullet}",
+                      font="Lato", size=18, color="FFFFFF", align=PP_ALIGN.CENTER)
 
         add_gradient_bar(slide, 5.43, 0.2)
 

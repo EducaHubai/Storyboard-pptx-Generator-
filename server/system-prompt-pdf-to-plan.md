@@ -64,7 +64,7 @@ Only use these types (rendered natively as PowerPoint shapes — no images, no c
 | `before_after` | A contrast between two states | `{ "beforeLabel": "Before", "beforeText": "...", "afterLabel": "After", "afterText": "..." }` |
 | `smart_grid` | 4–6 short labeled items in a grid, one highlighted | `{ "items": [{ "letter": "S", "word": "Specific" }], "highlightLetter": "S" }` |
 | `data_table` | Tabular data with 2+ columns | `{ "columns": ["Col A", "Col B"], "rows": [["a1", "b1"]] }` |
-| `illustration` | A decorative hero image for entrada (welcome/hook) or resumen (closing visual) only — NOT título/cierre (stay minimal), and not a substitute for a conceptos/puntos_clave diagram | `{ "name": "one of the illustration names below", "accentColor": "hex, optional — defaults to teal" }` |
+| `illustration` | A decorative hero image for entrada (welcome/hook) only — NOT resumen/título/cierre (all stay minimal), and not a substitute for a conceptos/puntos_clave diagram | `{ "name": "one of the illustration names below", "accentColor": "hex, optional — defaults to teal" }` |
 
 ### Icon set
 
