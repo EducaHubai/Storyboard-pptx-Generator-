@@ -1,4 +1,10 @@
-FROM python:3.11-slim
+# Pinned to bookworm explicitly — plain "python:3.11-slim" currently
+# resolves to Debian trixie, which Playwright doesn't officially support
+# yet; its --with-deps step falls back to guessing Ubuntu 20.04 package
+# names (ttf-ubuntu-font-family, ttf-unifont) that don't exist in trixie's
+# repos (renamed to fonts-unifont etc.), so apt fails outright. bookworm
+# is an officially supported OS for Playwright.
+FROM python:3.11-slim-bookworm
 
 # poppler-utils -> pdftotext (document parsing)
 # Playwright's chromium needs a handful of system libs even in --with-deps mode on slim images
