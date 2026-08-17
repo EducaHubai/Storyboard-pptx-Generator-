@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>corporate-ppt-bulk — EDUCA EDTECH Group</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&family=Lato:wght@400;700&display=swap');
+
+  :root {
+    --negro: #202020;
+    --burdeos: #963058;
+    --rosa: #E96A73;
+    --azulOscuro: #244A80;
+    --azulMedio: #2E7ABE;
+    --teal: #60BFB8;
+    --border: #E0E0E0;
+    --textSecondary: #666666;
+    --gradient: linear-gradient(90deg, #60BFB8 0%, #2E7ABE 25%, #244A80 50%, #963058 75%, #E96A73 100%);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #fff; color: var(--negro);
+    font-family: 'Lato', 'Calibri', sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 32px; border-bottom: 1px solid var(--border); position: relative;
+  }
+  header .gradient-bar { position: absolute; bottom: -2px; left: 0; right: 0; height: 2px; background: var(--gradient); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 5px; background: var(--negro); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-family: 'Rubik', sans-serif;
+    font-weight: 500; font-size: 11px;
+  }
+  .brand-text { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; }
+  main { max-width: 900px; margin: 0 auto; padding: 56px 32px 100px; }
+  .eyebrow {
+    display: block; font-family: 'Lato', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--burdeos); margin-bottom: 14px;
+  }
+  h1 { font-family: 'Rubik', sans-serif; font-size: 30px; font-weight: 500; letter-spacing: -0.01em; margin: 0 0 14px; }
+  p.lead { font-family: 'Lato', sans-serif; font-size: 15px; color: var(--textSecondary); line-height: 1.6; margin: 0; }
+
+  .dropzone {
+    margin-top: 32px; width: 100%; min-height: 240px; border: 1.5px dashed var(--border); border-radius: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 40px; background: #FAFAFA; transition: all 150ms ease; cursor: pointer;
+  }
+  .dropzone.drag { border-color: var(--burdeos); background: rgba(150,48,88,0.04); }
+  .dropzone input { display: none; }
+  .browse-btn {
+    padding: 10px 24px; border-radius: 6px; background: var(--burdeos); color: #fff;
+    font-family: 'Rubik', sans-serif; font-size: 13px; font-weight: 500; border: none; cursor: pointer;
+  }
+  .spinner {
+    width: 30px; height: 30px; border: 2px solid var(--border); border-top-color: var(--burdeos);
+    border-radius: 50%; animation: spin 800ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tree-node { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .tree-header {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none;
+    background: #FAFAFA;
+  }
+  .tree-header.modulo { background: var(--azulOscuro); color: #fff; }
+  .tree-header.unidad { background: #F1F1EF; }
+  .tree-header .caret { width: 10px; transition: transform 150ms; font-size: 11px; }
+  .tree-header.open .caret { transform: rotate(90deg); }
+  .tree-title { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; flex: 1; }
+  .tree-count { font-family: 'Lato', sans-serif; font-size: 11px; opacity: 0.75; }
+  .tree-body { display: none; padding: 8px 16px 12px 40px; }
+  .tree-body.open { display: block; }
+  .epi-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+  .epi-row .codigo { color: var(--textSecondary); font-family: 'Lato', sans-serif; font-size: 11px; min-width: 34px; }
+
+  .scope-actions { display: flex; gap: 8px; margin: 20px 0; flex-wrap: wrap; }
+  .chip {
+    padding: 8px 14px; border-radius: 9999px; border: 1px solid var(--border); background: transparent;
+    color: var(--textSecondary); font-family: 'Lato', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--burdeos); color: var(--burdeos); }
+
+  .footer-bar {
+    display: flex; align-items: center; justify-content: space-between; margin-top: 32px;
+    padding-top: 24px; border-top: 1px solid var(--border);
+  }
+  .btn-primary {
+    padding: 12px 26px; border-radius: 6px; background: var(--burdeos); color: #fff;
+    font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: none; cursor: pointer;
+  }
+  .btn-primary:disabled { opacity: 0.5; cursor: default; }
+  .btn-secondary {
+    padding: 12px 26px; border-radius: 6px; background: transparent; color: var(--negro);
+    font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: 1px solid var(--border); cursor: pointer;
+  }
+  .link-btn { background: none; border: none; color: var(--textSecondary); font-size: 13px; cursor: pointer; text-decoration: underline; }
+
+  .task-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .task-row.error { border-color: rgba(233,106,105,0.4); }
+  .task-title { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; }
+  .task-sub { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--textSecondary); margin-top: 2px; }
+  .task-error { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--rosa); margin-top: 4px; }
+  .status-badge {
+    font-family: 'Lato', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 9999px; flex-shrink: 0;
+  }
+  .status-pending, .status-running { background: rgba(46,122,190,0.1); color: var(--azulMedio); }
+  .status-done { background: rgba(96,191,184,0.15); color: #1f7d76; }
+  .status-error { background: rgba(233,106,105,0.12); color: var(--rosa); }
+
+  .error-banner {
+    display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-radius: 6px;
+    background: rgba(233,106,105,0.08); border: 1px solid rgba(233,106,105,0.3); color: var(--rosa);
+    font-size: 13px; margin-bottom: 24px;
+  }
+  .error-banner button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; }
+
+  .footer-gradient { height: 4px; width: 100%; background: var(--gradient); position: fixed; bottom: 0; left: 0; }
+  a.download-btn {
+    display: inline-block; padding: 16px 34px; border-radius: 8px; background: var(--burdeos); color: #fff;
+    font-family: 'Rubik', sans-serif; font-size: 15px; font-weight: 500; text-decoration: none;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="brand-mark">EE</span>
+      <span class="brand-text">EDUCA EDTECH Group — Corporate PPT Bulk</span>
+    </div>
+    <div class="gradient-bar"></div>
+  </header>
+  <main id="app"></main>
+  <div class="footer-gradient"></div>
+
+<script>
+const API_BASE = "";
+const state = {
+  screen: "upload",   // upload | scope | progress | result
+  loading: false,
+  error: null,
+  docId: null,
+  structure: null,
+  selected: new Set(), // "modulo||unidad||codigo" keys of checked épigrafes
+  openNodes: new Set(),
+  jobId: null,
+  job: null,
+  pollTimer: null,
+};
+
+function epiKey(modulo, unidad, codigo) { return `${modulo}||${unidad}||${codigo}`; }
+
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  if (state.error) app.appendChild(renderErrorBanner());
+  if (state.screen === "upload") app.appendChild(renderUpload());
+  else if (state.screen === "scope") app.appendChild(renderScope());
+  else if (state.screen === "progress") app.appendChild(renderProgress());
+  else if (state.screen === "result") app.appendChild(renderResult());
+}
+
+function renderErrorBanner() {
+  const div = document.createElement("div");
+  div.className = "error-banner";
+  div.innerHTML = `<span>⚠ ${escapeHtml(state.error)}</span>`;
+  const btn = document.createElement("button");
+  btn.textContent = "✕";
+  btn.onclick = () => { state.error = null; render(); };
+  div.appendChild(btn);
+  return div;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+
+// ── Screen 1: Upload ─────────────────────────────────────────
+function renderUpload() {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+    <span class="eyebrow">Step 1 of 3</span>
+    <h1>Upload the training document</h1>
+    <p class="lead">One unit, or a full course spanning several modules. The app will find every
+    unit/épigrafe in it, then let you choose which ones to generate decks for.</p>
+  `;
+  const drop = document.createElement("div");
+  drop.className = "dropzone";
+  if (state.loading) {
+    drop.innerHTML = `<div class="spinner"></div><p style="font-family:'Rubik',sans-serif;font-size:15px;margin:0;">Reading the document…</p>`;
+  } else {
+    drop.innerHTML = `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#E0E0E0" stroke-width="1.5">
+        <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <p style="font-family:'Rubik',sans-serif;font-size:15px;font-weight:500;margin:0;">Drag and drop your PDF here</p>
+      <p style="font-family:'Lato',sans-serif;font-size:13px;color:#666;margin:0;">or</p>
+      <label class="browse-btn">Browse files<input type="file" accept="application/pdf" id="file-input" /></label>
+      <p style="font-family:'Lato',sans-serif;font-size:12px;color:#666;margin-top:8px;">PDF only</p>
+    `;
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("drag"); };
+    drop.ondragleave = () => drop.classList.remove("drag");
+    drop.ondrop = (e) => {
+      e.preventDefault(); drop.classList.remove("drag");
+      const file = e.dataTransfer.files[0];
+      if (file) uploadPdf(file);
+    };
+  }
+  wrap.appendChild(drop);
+  setTimeout(() => {
+    const input = document.getElementById("file-input");
+    if (input) input.onchange = (e) => { if (e.target.files[0]) uploadPdf(e.target.files[0]); };
+  }, 0);
+  return wrap;
+}
+
+async function uploadPdf(file) {
+  state.loading = true; state.error = null; render();
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/documents`, { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.docId = data.doc_id;
+    state.structure = data.structure;
+    state.selected = new Set();
+    // Default: everything selected.
+    for (const m of data.structure.modulos) {
+      for (const u of m.unidades) {
+        for (const e of u.epigrafes) state.selected.add(epiKey(m.modulo, u.unidad, e.codigo));
+      }
+      state.openNodes.add(`m:${m.modulo}`);
+    }
+    state.screen = "scope";
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
+}
+
+// ── Screen 2: Scope ──────────────────────────────────────────
+function renderScope() {
+  const wrap = document.createElement("div");
+  const totalEpi = state.structure.modulos.reduce((s, m) => s + m.unidades.reduce((s2, u) => s2 + u.epigrafes.length, 0), 0);
+  wrap.innerHTML = `
+    <span class="eyebrow">Step 2 of 3 — Choose scope</span>
+    <h1>${escapeHtml(state.structure.certificado || "This document")}</h1>
+    <p class="lead">Found ${totalEpi} épigrafe${totalEpi === 1 ? "" : "s"} across ${state.structure.modulos.length}
+    module${state.structure.modulos.length === 1 ? "" : "s"}. Pick which ones to generate a deck for.</p>
+  `;
+  const actions = document.createElement("div");
+  actions.className = "scope-actions";
+  const selectAllBtn = document.createElement("button");
+  selectAllBtn.className = "chip"; selectAllBtn.textContent = "Select all";
+  selectAllBtn.onclick = () => { setAllSelected(true); render(); };
+  const selectNoneBtn = document.createElement("button");
+  selectNoneBtn.className = "chip"; selectNoneBtn.textContent = "Select none";
+  selectNoneBtn.onclick = () => { setAllSelected(false); render(); };
+  actions.appendChild(selectAllBtn); actions.appendChild(selectNoneBtn);
+  wrap.appendChild(actions);
+
+  const tree = document.createElement("div");
+  for (const m of state.structure.modulos) {
+    tree.appendChild(renderModuloNode(m));
+  }
+  wrap.appendChild(tree);
+
+  const footer = document.createElement("div");
+  footer.className = "footer-bar";
+  const backBtn = document.createElement("button");
+  backBtn.className = "btn-secondary"; backBtn.textContent = "← Back to upload";
+  backBtn.onclick = () => { state.screen = "upload"; render(); };
+  const genBtn = document.createElement("button");
+  genBtn.className = "btn-primary";
+  genBtn.disabled = state.loading || state.selected.size === 0;
+  genBtn.textContent = state.loading ? "Starting…" : `Generate ${state.selected.size} deck${state.selected.size === 1 ? "" : "s"} →`;
+  genBtn.onclick = startJob;
+  footer.appendChild(backBtn); footer.appendChild(genBtn);
+  wrap.appendChild(footer);
+  return wrap;
+}
+
+function setAllSelected(on) {
+  state.selected = new Set();
+  if (on) {
+    for (const m of state.structure.modulos)
+      for (const u of m.unidades)
+        for (const e of u.epigrafes) state.selected.add(epiKey(m.modulo, u.unidad, e.codigo));
+  }
+}
+
+function moduloEpiKeys(m) {
+  const keys = [];
+  for (const u of m.unidades) for (const e of u.epigrafes) keys.push(epiKey(m.modulo, u.unidad, e.codigo));
+  return keys;
+}
+function unidadEpiKeys(modulo, u) {
+  return u.epigrafes.map((e) => epiKey(modulo, u.unidad, e.codigo));
+}
+
+function renderModuloNode(m) {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+  const keys = moduloEpiKeys(m);
+  const checkedCount = keys.filter((k) => state.selected.has(k)).length;
+  const isOpen = state.openNodes.has(`m:${m.modulo}`);
+
+  const header = document.createElement("div");
+  header.className = "tree-header modulo" + (isOpen ? " open" : "");
+  header.innerHTML = `
+    <span class="caret">▶</span>
+    <input type="checkbox" ${checkedCount === keys.length ? "checked" : ""} ${checkedCount > 0 && checkedCount < keys.length ? "data-indet" : ""} />
+    <span class="tree-title">${escapeHtml(m.nombre)} <span style="opacity:0.7;font-weight:400;">(${escapeHtml(m.modulo)})</span></span>
+    <span class="tree-count">${checkedCount}/${keys.length}</span>
+  `;
+  const checkbox = header.querySelector("input");
+  checkbox.onclick = (e) => {
+    e.stopPropagation();
+    const on = checkbox.checked;
+    keys.forEach((k) => (on ? state.selected.add(k) : state.selected.delete(k)));
+    render();
+  };
+  header.onclick = (e) => {
+    if (e.target === checkbox) return;
+    if (isOpen) state.openNodes.delete(`m:${m.modulo}`); else state.openNodes.add(`m:${m.modulo}`);
+    render();
+  };
+  node.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "tree-body" + (isOpen ? " open" : "");
+  for (const u of m.unidades) body.appendChild(renderUnidadNode(m, u));
+  node.appendChild(body);
+  return node;
+}
+
+function renderUnidadNode(m, u) {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+  const keys = unidadEpiKeys(m.modulo, u);
+  const checkedCount = keys.filter((k) => state.selected.has(k)).length;
+  const nodeId = `u:${m.modulo}:${u.unidad}`;
+  const isOpen = state.openNodes.has(nodeId);
+
+  const header = document.createElement("div");
+  header.className = "tree-header unidad" + (isOpen ? " open" : "");
+  header.innerHTML = `
+    <span class="caret">▶</span>
+    <input type="checkbox" ${checkedCount === keys.length ? "checked" : ""} />
+    <span class="tree-title">${escapeHtml(u.nombre)}</span>
+    <span class="tree-count">${checkedCount}/${keys.length}</span>
+  `;
+  const checkbox = header.querySelector("input");
+  checkbox.onclick = (e) => {
+    e.stopPropagation();
+    const on = checkbox.checked;
+    keys.forEach((k) => (on ? state.selected.add(k) : state.selected.delete(k)));
+    render();
+  };
+  header.onclick = (e) => {
+    if (e.target === checkbox) return;
+    if (isOpen) state.openNodes.delete(nodeId); else state.openNodes.add(nodeId);
+    render();
+  };
+  node.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "tree-body" + (isOpen ? " open" : "");
+  for (const e of u.epigrafes) {
+    const key = epiKey(m.modulo, u.unidad, e.codigo);
+    const row = document.createElement("div");
+    row.className = "epi-row";
+    row.innerHTML = `
+      <input type="checkbox" ${state.selected.has(key) ? "checked" : ""} />
+      <span class="codigo">${escapeHtml(e.codigo)}</span>
+      <span>${escapeHtml(e.titulo)}</span>
+    `;
+    row.querySelector("input").onclick = () => {
+      if (state.selected.has(key)) state.selected.delete(key); else state.selected.add(key);
+      render();
+    };
+    body.appendChild(row);
+  }
+  node.appendChild(body);
+  return node;
+}
+
+async function startJob() {
+  const items = [...state.selected].map((k) => {
+    const [modulo, unidad, codigo] = k.split("||");
+    return { modulo, unidad: Number(unidad), codigo };
+  });
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_id: state.docId, selection: { level: "epigrafe", items } }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.jobId = data.job_id;
+    state.job = data;
+    state.screen = "progress";
+    pollJob();
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
+}
+
+// ── Screen 3: Progress ───────────────────────────────────────
+function renderProgress() {
+  const wrap = document.createElement("div");
+  const job = state.job;
+  const doneCount = job.tasks.filter((t) => t.status === "done" || t.status === "error").length;
+  wrap.innerHTML = `
+    <span class="eyebrow">Step 3 of 3 — Generating</span>
+    <h1>${doneCount} of ${job.tasks.length} processed</h1>
+    <p class="lead">This runs 2 at a time in the background — you can leave this open or come back later
+    (job id: ${escapeHtml(job.job_id)}).</p>
+  `;
+  const list = document.createElement("div");
+  list.style.marginTop = "28px";
+  for (const t of job.tasks) list.appendChild(renderTaskRow(t));
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function renderTaskRow(t) {
+  const row = document.createElement("div");
+  row.className = "task-row" + (t.status === "error" ? " error" : "");
+  row.innerHTML = `
+    <div>
+      <div class="task-title">${escapeHtml(t.codigo)} — ${escapeHtml(t.titulo)}</div>
+      <div class="task-sub">${escapeHtml(t.modulo)}</div>
+      ${t.error ? `<div class="task-error">⚠ ${escapeHtml(t.error)}</div>` : ""}
+      ${t.contentWarning ? `<div class="task-sub" style="font-style:italic;">ⓘ ${escapeHtml(t.contentWarning)}</div>` : ""}
+    </div>
+    <span class="status-badge status-${t.status}">${t.status}</span>
+  `;
+  return row;
+}
+
+function pollJob() {
+  if (state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${state.jobId}`);
+      const data = await res.json();
+      state.job = data;
+      if (data.status === "done") {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+        state.screen = "result";
+      }
+      render();
+    } catch (e) {
+      // transient poll failure — keep trying, don't surface as a hard error
+    }
+  }, 2000);
+}
+
+// ── Screen 4: Result ─────────────────────────────────────────
+function renderResult() {
+  const wrap = document.createElement("div");
+  const job = state.job;
+  const successCount = job.tasks.filter((t) => t.status === "done").length;
+  wrap.innerHTML = `
+    <span class="eyebrow">Done</span>
+    <h1>${successCount} of ${job.tasks.length} deck${job.tasks.length === 1 ? "" : "s"} generated</h1>
+  `;
+  const dl = document.createElement("a");
+  dl.className = "download-btn";
+  dl.href = `${API_BASE}/jobs/${state.jobId}/download`;
+  dl.textContent = "⬇ Download .zip";
+  dl.style.marginTop = "16px"; dl.style.marginBottom = "28px"; dl.style.display = "inline-block";
+  wrap.appendChild(dl);
+
+  const list = document.createElement("div");
+  for (const t of job.tasks) list.appendChild(renderTaskRow(t));
+  wrap.appendChild(list);
+
+  const footer = document.createElement("div");
+  footer.style.textAlign = "center"; footer.style.marginTop = "32px";
+  const startOverBtn = document.createElement("button");
+  startOverBtn.className = "link-btn"; startOverBtn.textContent = "Start over with a new PDF";
+  startOverBtn.onclick = () => {
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    Object.assign(state, {
+      screen: "upload", loading: false, error: null, docId: null, structure: null,
+      selected: new Set(), openNodes: new Set(), jobId: null, job: null, pollTimer: null,
+    });
+    render();
+  };
+  footer.appendChild(startOverBtn);
+  wrap.appendChild(footer);
+  return wrap;
+}
+
+render();
+</script>
+</body>
+</html>

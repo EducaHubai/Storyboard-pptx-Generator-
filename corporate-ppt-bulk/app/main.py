@@ -1,5 +1,6 @@
 """FastAPI app wiring: upload a PDF, pick a scope, get a zip of .pptx decks.
 
+    GET  /                     — single-page UI (static/index.html)
     POST /documents          — upload PDF, parse, return {doc_id, structure}
     POST /jobs                — start a background generation job for a scope
     GET  /jobs/{job_id}       — poll status (per-épigrafe progress/errors)
@@ -15,12 +16,20 @@ import os
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 import jobs
 
 app = FastAPI(title="corporate-ppt-bulk")
+
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    with open(os.path.join(_STATIC_DIR, "index.html"), encoding="utf-8") as f:
+        return f.read()
 
 
 @app.get("/health")
