@@ -290,10 +290,17 @@ def validate_plan(plan: dict) -> list[str]:
     if not content_warning:
         # Full 12-15 rule only enforced when the model hasn't explicitly
         # flagged the épigrafe as too thin to reach it honestly.
-        if not (3 <= n_concepto <= 5):
-            errors.append(f"expected 3-5 'concepto' slides, found {n_concepto}")
-        if not (3 <= n_puntos <= 5):
-            errors.append(f"expected 3-5 'puntos_clave' slides, found {n_puntos}")
+        #
+        # No independent per-section upper bound (e.g. rejecting 6
+        # concepto slides outright) — the combined 8-11 check below,
+        # together with each section's own 3-slide floor, already caps
+        # any one section at 11-3=8 in practice. A rigid "5 max" on top
+        # of that rejected otherwise-valid decks (6 concepto + 3
+        # puntos_clave = 9, well within range) for no structural reason.
+        if n_concepto < 3:
+            errors.append(f"expected at least 3 'concepto' slides, found {n_concepto}")
+        if n_puntos < 3:
+            errors.append(f"expected at least 3 'puntos_clave' slides, found {n_puntos}")
         if not (8 <= n_concepto + n_puntos <= 11):
             errors.append(
                 f"'concepto' + 'puntos_clave' must total 8-11 slides, found {n_concepto + n_puntos}"
