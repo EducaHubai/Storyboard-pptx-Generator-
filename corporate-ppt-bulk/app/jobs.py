@@ -324,6 +324,18 @@ def get_job_zip_path(job_id: str) -> str | None:
     return None
 
 
+def build_zip_filename(job: dict) -> str:
+    """Download filename: date + a brief description of what the job
+    generated, e.g. '2026-08-19_C04-01 - Strategic Thinking_a1b2c3d4.zip' —
+    friendlier than the bare job_id for someone browsing their Downloads
+    folder. The job_id prefix stays (short) so two jobs for the same
+    course on the same day never collide."""
+    date_str = time.strftime("%Y-%m-%d", time.localtime(job.get("created_at") or time.time()))
+    certificado = job["tasks"][0].get("certificado") if job.get("tasks") else ""
+    brief = _clean_filename(certificado or "")[:60].strip() or "corporate-ppt"
+    return f"{date_str}_{brief}_{job['job_id'][:8]}.zip"
+
+
 def compute_eta_seconds(job: dict) -> float | None:
     """Rough remaining-time estimate from the average duration of tasks
     that have actually finished so far — None until at least one has, so

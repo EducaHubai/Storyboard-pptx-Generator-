@@ -220,4 +220,4 @@ def download_job(job_id: str):
     zip_path = jobs.get_job_zip_path(job_id)
     if zip_path is None:
         raise HTTPException(409, "Job not ready yet — poll GET /jobs/{job_id} until download_ready is true")
-    return FileResponse(zip_path, media_type="application/zip", filename=f"{job_id}.zip")
+    return FileResponse(zip_path, media_type="application/zip", filename=jobs.build_zip_filename(job))
