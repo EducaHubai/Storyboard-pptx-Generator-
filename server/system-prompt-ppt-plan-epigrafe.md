@@ -29,6 +29,36 @@ one call — and one deck — per epígrafe.
   is still useful elsewhere (filenames, confirming scope) — it just never
   renders on a slide.
 
+## Content QA gate (run before finalizing the JSON)
+
+Before returning the JSON, review the full set of drafted slide content
+across the whole deck — all `concepto`, `puntos_clave`, and `resumen`
+items together, not slide-by-slide in isolation — for two failure modes:
+
+1. **Duplicate or near-duplicate content.** Compare each slide's core
+   point against every other slide's. A `concepto` and a `puntos_clave`
+   slide (or two `concepto` slides) that restate the same idea in
+   different words is a real duplicate, not two distinct ideas. If you
+   find one, don't include both — merge them into a single slide,
+   replace the weaker one with distinct content that's actually in the
+   source, or drop it. If dropping one would leave a section short of
+   the 3–5 slide minimum, treat it like the no-filler rule above: set
+   `contentWarning` explaining why rather than padding with a
+   near-duplicate to hit the count.
+2. **Bullet-point anomalies.** A slide, card, or step that is nothing but
+   a bare label or short phrase with no explanatory sentence is a red
+   flag, not a valid style choice. Every card/step needs the one-sentence
+   "what it means / why it matters" text its `fields` shape already has a
+   slot for (`flujo_pasos`'s `text`, `mito_realidad`'s row content,
+   `tarjeta_destacada`'s `text`, `panel_tarjetas`' card `text`). If a card
+   ends up with only a title/icon and nothing else, either the source
+   didn't actually support that card — cut it — or the supporting
+   sentence got dropped while trimming to the ~20-word budget — put it
+   back, tightened rather than removed.
+
+Fix whatever these two checks surface before returning the JSON — don't
+emit a plan with these problems and expect a later pass to correct it.
+
 ## Section colors (fixed — for reference only, the renderer already applies these)
 - titulo / cierre: full brand gradient `#60BFB8 → #2E7ABE → #244A80 → #963058 → #E96A73`
 - inicio: Teal `#60BFB8` panel

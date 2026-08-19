@@ -78,7 +78,7 @@ Fixed order, six sections:
 6. **Cierre** â 1 slide. Only "Thank you".
 
 None of the opening slides (TÃ­tulo, Inicio) should show the epÃ­grafe's
-number. That number is still useful for Step 8's filename and for
+number. That number is still useful for Step 9's filename and for
 confirming which epÃ­grafe you're building in Step 1 â it just never renders
 on a slide.
 
@@ -147,7 +147,37 @@ Fixed sections' `fields` shapes: `titulo â {title}` Â· `cierre â {title}` (d
 - No animations â this is a static deck; transitions get added later in
   HeyGen.
 
-## Step 7 â build `plan.json` and render
+## Step 7 â content QA gate (run before writing plan.json)
+
+Before building plan.json, review the full set of drafted slide content
+across the whole deck â all Conceptos, Puntos Clave, and Resumen items
+together, not slide-by-slide in isolation â for two failure modes:
+
+1. **Duplicate or near-duplicate content.** Compare each slide's core
+   point against every other slide's. A Concepto and a Puntos Clave slide
+   (or two Conceptos slides) that restate the same idea in different
+   words is a real duplicate, not two distinct ideas. If you find one,
+   don't render both â merge them into a single slide, replace the
+   weaker one with distinct content that's actually in the source, or
+   drop it. If dropping one would leave the section short of Step 3's
+   3â5 slide minimum, treat it like Step 2's density-honesty rule: say so
+   and ask the user how to proceed rather than padding with a
+   near-duplicate to hit the count.
+2. **Bullet-point anomalies.** A slide, card, or step that is nothing but
+   a bare label or short phrase with no explanatory sentence is a red
+   flag, not a valid style choice. Every card/step needs the one-sentence
+   "what it means / why it matters" text the layout already has a field
+   for (`flujo_pasos`'s `text`, `mito_realidad`'s row content,
+   `tarjeta_destacada`'s `text`, `panel_tarjetas`' card `text`). If a card
+   ends up with only a title/icon and nothing else, either the source
+   didn't actually support that card â cut it â or you dropped the
+   supporting sentence while trimming to Step 6's word budget â put it
+   back, tightened rather than removed.
+
+Fix whatever these two checks surface before moving on to building
+plan.json â don't render first and correct after.
+
+## Step 8 â build `plan.json` and render
 
 Write one `plan.json` per deck (per epÃ­grafe):
 
@@ -183,7 +213,7 @@ hero number or card shadows is baked into the background image), and embeds
 Rubik/Lato into the file so those text boxes render correctly even without
 the fonts installed locally.
 
-## Step 8 â filename and delivery
+## Step 9 â filename and delivery
 
 Name each file `[cÃ³digo]-[mÃ³dulo].pptx` per the unit's real metadata. If
 either part is missing from the source:
