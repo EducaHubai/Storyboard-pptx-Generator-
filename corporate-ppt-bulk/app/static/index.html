@@ -69,6 +69,18 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .staged-list { margin-top: 20px; }
+  .staged-file {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
+  }
+  .staged-file .name { font-family: 'Lato', sans-serif; font-size: 13px; }
+  .staged-file .remove {
+    background: none; border: none; color: var(--textSecondary); cursor: pointer; font-size: 14px;
+    padding: 4px 8px; border-radius: 4px; min-height: 32px; min-width: 32px;
+  }
+  .staged-file .remove:hover { color: var(--errorText); }
+
   .tree-node { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
   .tree-header {
     display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none;
@@ -124,6 +136,13 @@
     text-decoration: underline; padding: 8px; min-height: 44px;
   }
   .link-btn:hover { color: var(--negro); }
+  .btn-retry {
+    padding: 12px 26px; min-height: 44px; border-radius: 6px; background: #fff; color: var(--errorText);
+    font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: 1px solid var(--errorText);
+    cursor: pointer; transition: background-color 150ms ease;
+  }
+  .btn-retry:hover:not(:disabled) { background: rgba(196,59,59,0.06); }
+  .btn-retry:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .progress-track { width: 100%; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 20px 0 8px; }
   .progress-fill { height: 100%; background: var(--gradient); border-radius: 4px; transition: width 300ms ease; }
@@ -192,6 +211,7 @@ const state = {
   screen: "upload",   // upload | scope | progress | result
   loading: false,
   error: null,
+  stagedFiles: [], // File[] staged on the upload screen before parsing
   docId: null,
   structure: null,
   selected: new Set(), // "modulo||unidad||codigo" keys of checked épigrafes
@@ -252,54 +272,105 @@ function escapeHtml(s) {
 // ── Screen 1: Upload ─────────────────────────────────────────
 function renderUpload() {
   const wrap = document.createElement("div");
+  const multiHint = state.stagedFiles.length > 1
+    ? ` All ${state.stagedFiles.length} are treated as one course/acción formativa — one module per PDF.`
+    : "";
   wrap.innerHTML = `
     <span class="eyebrow">Step 1 of 3</span>
-    <h1>Upload the training document</h1>
-    <p class="lead">One unit, or a full course spanning several modules. The app will find every
-    unit/épigrafe in it, then let you choose which ones to generate decks for.</p>
+    <h1>Upload the training document${state.stagedFiles.length > 1 ? "s" : ""}</h1>
+    <p class="lead">One unit, or a full course spanning several modules — as one PDF, or several PDFs from the
+    same block (e.g. one per module). The app will find every unit/épigrafe across all of them, then let you
+    choose which ones to generate decks for.${multiHint}</p>
   `;
   wrap.prepend(renderStepper(0));
   const drop = document.createElement("div");
   drop.className = "dropzone";
   if (state.loading) {
-    drop.innerHTML = `<div class="spinner"></div><p style="font-family:'Rubik',sans-serif;font-size:15px;margin:0;">Reading the document…</p>`;
+    drop.innerHTML = `<div class="spinner"></div><p style="font-family:'Rubik',sans-serif;font-size:15px;margin:0;">Reading ${state.stagedFiles.length} document${state.stagedFiles.length === 1 ? "" : "s"}…</p>`;
   } else {
     drop.innerHTML = `
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#E0E0E0" stroke-width="1.5">
         <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <p style="font-family:'Rubik',sans-serif;font-size:15px;font-weight:500;margin:0;">Drag and drop your PDF here</p>
+      <p style="font-family:'Rubik',sans-serif;font-size:15px;font-weight:500;margin:0;">Drag and drop your PDF(s) here</p>
       <p style="font-family:'Lato',sans-serif;font-size:13px;color:#666;margin:0;">or</p>
-      <label class="browse-btn">Browse files<input type="file" accept="application/pdf" id="file-input" /></label>
-      <p style="font-family:'Lato',sans-serif;font-size:12px;color:#666;margin-top:8px;">PDF only</p>
+      <label class="browse-btn">Browse files<input type="file" accept="application/pdf" multiple id="file-input" /></label>
+      <p style="font-family:'Lato',sans-serif;font-size:12px;color:#666;margin-top:8px;">PDF only — select or drop more than one if they're from the same block</p>
     `;
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("drag"); };
     drop.ondragleave = () => drop.classList.remove("drag");
     drop.ondrop = (e) => {
       e.preventDefault(); drop.classList.remove("drag");
-      const file = e.dataTransfer.files[0];
-      if (file) uploadPdf(file);
+      addStagedFiles(e.dataTransfer.files);
     };
   }
   wrap.appendChild(drop);
   setTimeout(() => {
     const input = document.getElementById("file-input");
-    if (input) input.onchange = (e) => { if (e.target.files[0]) uploadPdf(e.target.files[0]); };
+    if (input) input.onchange = (e) => addStagedFiles(e.target.files);
   }, 0);
+
+  if (state.stagedFiles.length > 0) {
+    const list = document.createElement("div");
+    list.className = "staged-list";
+    state.stagedFiles.forEach((file, i) => {
+      const row = document.createElement("div");
+      row.className = "staged-file";
+      row.innerHTML = `<span class="name">📄 ${escapeHtml(file.name)}</span>`;
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove";
+      removeBtn.textContent = "✕";
+      removeBtn.setAttribute("aria-label", `Remove ${file.name}`);
+      removeBtn.disabled = state.loading;
+      removeBtn.onclick = () => { state.stagedFiles.splice(i, 1); render(); };
+      row.appendChild(removeBtn);
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+
+    const footer = document.createElement("div");
+    footer.className = "footer-bar";
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "btn-secondary"; clearBtn.textContent = "Clear all";
+    clearBtn.disabled = state.loading;
+    clearBtn.onclick = () => { state.stagedFiles = []; render(); };
+    const parseBtn = document.createElement("button");
+    parseBtn.className = "btn-primary";
+    parseBtn.disabled = state.loading;
+    parseBtn.textContent = state.loading
+      ? "Reading…"
+      : `Parse ${state.stagedFiles.length} document${state.stagedFiles.length === 1 ? "" : "s"} →`;
+    parseBtn.onclick = () => uploadPdfs(state.stagedFiles);
+    footer.appendChild(clearBtn); footer.appendChild(parseBtn);
+    wrap.appendChild(footer);
+  }
   return wrap;
 }
 
-async function uploadPdf(file) {
+function addStagedFiles(fileList) {
+  const existingNames = new Set(state.stagedFiles.map((f) => f.name + f.size));
+  for (const file of fileList) {
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) continue;
+    const key = file.name + file.size;
+    if (existingNames.has(key)) continue; // skip exact re-adds (same drop fired twice, etc.)
+    state.stagedFiles.push(file);
+    existingNames.add(key);
+  }
+  render();
+}
+
+async function uploadPdfs(files) {
   state.loading = true; state.error = null; render();
   try {
     const formData = new FormData();
-    formData.append("file", file);
+    for (const file of files) formData.append("files", file);
     const res = await fetch(`${API_BASE}/documents`, { method: "POST", body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
     state.docId = data.doc_id;
     state.structure = data.structure;
+    state.stagedFiles = [];
     state.selected = new Set();
     // Default: everything selected.
     for (const m of data.structure.modulos) {
@@ -548,6 +619,22 @@ function renderTaskRow(t) {
   return row;
 }
 
+async function retryFailed() {
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${state.jobId}/retry`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.job = data;
+    state.screen = "progress";
+    pollJob();
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
+}
+
 function pollJob() {
   if (state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(async () => {
@@ -572,16 +659,39 @@ function renderResult() {
   const wrap = document.createElement("div");
   const job = state.job;
   const successCount = job.tasks.filter((t) => t.status === "done").length;
+  const failed = job.tasks.filter((t) => t.status === "error");
   wrap.innerHTML = `
     <span class="eyebrow">Done</span>
     <h1>${successCount} of ${job.tasks.length} deck${job.tasks.length === 1 ? "" : "s"} generated</h1>
   `;
-  const dl = document.createElement("a");
-  dl.className = "download-btn";
-  dl.href = `${API_BASE}/jobs/${state.jobId}/download`;
-  dl.textContent = "⬇ Download .zip";
-  dl.style.marginTop = "16px"; dl.style.marginBottom = "28px"; dl.style.display = "inline-block";
-  wrap.appendChild(dl);
+
+  const actionsRow = document.createElement("div");
+  actionsRow.style.display = "flex"; actionsRow.style.gap = "12px"; actionsRow.style.flexWrap = "wrap";
+  actionsRow.style.marginTop = "16px"; actionsRow.style.marginBottom = "28px";
+
+  if (successCount > 0) {
+    const dl = document.createElement("a");
+    dl.className = "download-btn";
+    dl.href = `${API_BASE}/jobs/${state.jobId}/download`;
+    dl.textContent = `⬇ Download .zip (${successCount})`;
+    actionsRow.appendChild(dl);
+  }
+  if (failed.length > 0) {
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "btn-retry";
+    retryBtn.disabled = state.loading;
+    retryBtn.textContent = state.loading ? "Retrying…" : `↻ Retry ${failed.length} failed`;
+    retryBtn.onclick = retryFailed;
+    actionsRow.appendChild(retryBtn);
+  }
+  if (successCount === 0) {
+    const msg = document.createElement("p");
+    msg.className = "lead";
+    msg.style.margin = "0"; msg.style.alignSelf = "center";
+    msg.textContent = "Nothing generated yet — every épigrafe hit an error. Check the reasons below, then retry.";
+    actionsRow.appendChild(msg);
+  }
+  wrap.appendChild(actionsRow);
 
   const list = document.createElement("div");
   list.className = "task-list";
@@ -595,7 +705,7 @@ function renderResult() {
   startOverBtn.onclick = () => {
     if (state.pollTimer) clearInterval(state.pollTimer);
     Object.assign(state, {
-      screen: "upload", loading: false, error: null, docId: null, structure: null,
+      screen: "upload", loading: false, error: null, stagedFiles: [], docId: null, structure: null,
       selected: new Set(), openNodes: new Set(), jobId: null, job: null, pollTimer: null,
     });
     render();

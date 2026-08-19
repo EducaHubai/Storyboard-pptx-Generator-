@@ -49,8 +49,43 @@ def _clean_filename(s: str) -> str:
 
 
 # ── Documents ────────────────────────────────────────────────
-def create_document(pdf_bytes: bytes) -> tuple[str, dict]:
-    structure = pdf_parser.parse_document(pdf_bytes)
+def _merge_structures(structures: list[dict]) -> dict:
+    """Concatenates several PDFs' módulos into one combined structure, for
+    the case where a course/acción formativa is split across one PDF per
+    módulo. Raises ParserError if two uploaded PDFs claim the same módulo
+    code — that's either a duplicate upload or two modules that collide,
+    and either way resolve_selection() can't tell them apart by code."""
+    modulos: list[dict] = []
+    seen_codes: set[str] = set()
+    certificado = ""
+    for s in structures:
+        if not certificado:
+            certificado = s.get("certificado", "")
+        for m in s["modulos"]:
+            if m["modulo"] in seen_codes:
+                raise pdf_parser.ParserError(
+                    f"Module code '{m['modulo']}' appears in more than one uploaded PDF — "
+                    "check you didn't upload the same module twice, or that two different "
+                    "modules don't share a code."
+                )
+            seen_codes.add(m["modulo"])
+            modulos.append(m)
+    return {"certificado": certificado, "modulos": modulos}
+
+
+def create_document(pdfs: list[tuple[str, bytes]]) -> tuple[str, dict]:
+    """`pdfs` is a list of (filename, pdf_bytes) — one or more PDFs that
+    together make up a single course/acción formativa (e.g. one PDF per
+    módulo). Each is parsed independently, then merged into one structure
+    sharing a single doc_id so scope selection/generation spans all of
+    them at once."""
+    structures = []
+    for filename, pdf_bytes in pdfs:
+        try:
+            structures.append(pdf_parser.parse_document(pdf_bytes))
+        except pdf_parser.ParserError as e:
+            raise pdf_parser.ParserError(f"{filename}: {e}") from e
+    structure = _merge_structures(structures)
     doc_id = uuid.uuid4().hex
     DOCUMENTS[doc_id] = structure
     return doc_id, structure
@@ -176,6 +211,31 @@ def get_job_zip_path(job_id: str) -> str | None:
     return None
 
 
+def retry_failed(job_id: str) -> dict:
+    """Re-runs only this job's failed tasks — reuses the doc_id/structure
+    and the job's original language/model already in memory, so the
+    caller never has to re-upload the PDF(s) or reselect scope just
+    because one épigrafe (out of one, or one out of many) hit a
+    transient failure. Newly-succeeded decks are appended to the
+    existing zip rather than rebuilding it from scratch."""
+    job = JOBS.get(job_id)
+    if job is None:
+        raise KeyError(job_id)
+    if job["status"] == "running":
+        raise ValueError("Job is still running — wait for it to finish before retrying")
+    failed = [t for t in job["tasks"] if t["status"] == "error"]
+    if not failed:
+        raise ValueError("No failed tasks to retry")
+
+    for t in failed:
+        t["status"] = "pending"
+        t["error"] = None
+    job["status"] = "running"
+    job["download_ready"] = False
+    asyncio.create_task(_run_retry(job_id, failed))
+    return job
+
+
 def _render_one_task(task: dict, language: str, model: str | None) -> None:
     """Runs in a worker thread: generate the plan (OpenAI, with its own
     internal retry), then render it to .pptx bytes. Mutates task in place."""
@@ -201,10 +261,32 @@ def _render_one_task(task: dict, language: str, model: str | None) -> None:
     task["content_warning"] = plan.get("contentWarning")
 
 
-async def _run_job(job_id: str) -> None:
-    job = JOBS[job_id]
-    job["status"] = "running"
+def _zip_arcname(task: dict) -> str:
+    folder = _clean_filename(f"{task['modulo']} - {task['modulo_nombre']}")
+    return f"{folder}/{task['filename']}"
 
+
+async def _run_retry(job_id: str, tasks: list[dict]) -> None:
+    job = JOBS[job_id]
+    await _run_tasks(job, tasks)
+
+    # Append-only: previously successful tasks already have their bytes
+    # written into the zip and popped from memory (see _run_job below) —
+    # only newly-done tasks from this retry round need adding.
+    newly_done = [t for t in tasks if t["status"] == "done"]
+    if newly_done:
+        with zipfile.ZipFile(job["zip_path"], "a", zipfile.ZIP_DEFLATED) as zf:
+            for task in newly_done:
+                zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
+
+    job["download_ready"] = True
+    job["status"] = "done"
+
+
+async def _run_tasks(job: dict, tasks: list[dict]) -> None:
+    """Runs `tasks` (a subset or all of job["tasks"]) against the shared
+    concurrency limiter. Used both for a job's first pass and for
+    retry_failed()'s re-run of just the failed subset."""
     async def run_task(task):
         task["status"] = "running"
         try:
@@ -220,17 +302,21 @@ async def _run_job(job_id: str) -> None:
     # _CONCURRENCY_LIMITER caps real concurrency at 2; gather here just lets
     # all tasks queue against it without a separate semaphore layer.
     async with anyio.create_task_group() as tg:
-        for t in job["tasks"]:
+        for t in tasks:
             tg.start_soon(run_task, t)
+
+
+async def _run_job(job_id: str) -> None:
+    job = JOBS[job_id]
+    job["status"] = "running"
+    await _run_tasks(job, job["tasks"])
 
     zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for task in job["tasks"]:
             if task["status"] != "done":
                 continue
-            folder = _clean_filename(f"{task['modulo']} - {task['modulo_nombre']}")
-            arcname = f"{folder}/{task['filename']}"
-            zf.writestr(arcname, task.pop("_pptx_bytes"))
+            zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
 
     job["zip_path"] = zip_path
     job["download_ready"] = True

@@ -62,9 +62,14 @@ Coolify ya protege el acceso con su propia contraseña, así que este servicio n
 ```bash
 BASE="https://tu-servicio.coolify.app"
 
-# 1. Subir el PDF y ver la estructura real detectada
+# 1. Subir el/los PDF(s) y ver la estructura real detectada.
+#    Uno o varios — si son varios, se tratan como una misma acción formativa
+#    (p. ej. un PDF por módulo) y se combinan en un único doc_id/structure.
 curl -s -X POST "$BASE/documents" \
-  -F "file=@Certificate_in_eLearning_Production.pdf" | jq
+  -F "files=@Certificate_in_eLearning_Production.pdf" | jq
+
+curl -s -X POST "$BASE/documents" \
+  -F "files=@Modulo1.pdf" -F "files=@Modulo2.pdf" -F "files=@Modulo3.pdf" | jq
 
 # devuelve: {"doc_id": "...", "structure": {"certificado": "...", "modulos": [...]}}
 
@@ -98,6 +103,11 @@ curl -s "$BASE/jobs/JOB_ID" | jq
 
 # 4. Descargar el zip cuando "download_ready": true
 curl -s "$BASE/jobs/JOB_ID/download" -o decks.zip
+
+# 5. Si algo falló (uno de N, o el único epígrafe de un job de 1), reintenta
+#    solo lo fallido — no hace falta volver a subir el PDF ni reelegir scope.
+#    Los que ya salieron bien se quedan tal cual en el zip.
+curl -s -X POST "$BASE/jobs/JOB_ID/retry" | jq
 ```
 
 ## Límites conocidos (v1)
@@ -116,6 +126,13 @@ curl -s "$BASE/jobs/JOB_ID/download" -o decks.zip
   hemos visto (TOC + "Teaching unit N" + "N.N Título"). Si un documento futuro
   cambia de formato, `parse_document` lanza un error explicando qué no
   encontró, en vez de generar contenido inventado.
-- **Sin reintentos de red hacia OpenAI**: si la llamada falla por timeout/rate
-  limit, esa tarea queda en `error` con el mensaje, pero el resto del job
-  sigue. Puedes relanzar solo esos epígrafes con un job nuevo.
+- **Reintentos ante rate limit de OpenAI**: un 429 se reintenta hasta 5 veces
+  honrando el "try again in Ns" del propio error de OpenAI. Otros fallos
+  (timeout, error de render, plan.json inválido tras el reintento) dejan esa
+  tarea en `error` con el mensaje, pero el resto del job sigue — el botón
+  "Retry N failed" (o `POST /jobs/{job_id}/retry`) reintenta solo esas tareas
+  sin volver a subir el PDF ni reelegir scope; funciona igual si falló una
+  de muchas o la única de un job de un solo epígrafe.
+- **PDFs múltiples del mismo bloque**: si subes varios, cada uno se parsea por
+  separado y luego se combinan; un código de módulo repetido entre dos PDFs
+  se rechaza (422) en vez de fusionarse en silencio.

@@ -4,6 +4,7 @@
     POST /documents          — upload PDF, parse, return {doc_id, structure}
     POST /jobs                — start a background generation job for a scope
     GET  /jobs/{job_id}       — poll status (per-épigrafe progress/errors)
+    POST /jobs/{job_id}/retry — re-run only this job's failed épigrafes
     GET  /jobs/{job_id}/download — download the finished zip
     GET  /health              — liveness + config check
 
@@ -42,12 +43,20 @@ def health():
 
 
 @app.post("/documents")
-async def upload_document(file: UploadFile = File(...)):
-    if file.content_type not in ("application/pdf", "application/x-pdf") and not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Expected a PDF file")
-    pdf_bytes = await file.read()
+async def upload_document(files: list[UploadFile] = File(...)):
+    """Accepts one or more PDFs — a single unit/course document, or several
+    PDFs that together make up one course/acción formativa (one per módulo,
+    typically). All are parsed and merged into a single doc_id/structure so
+    scope selection and bulk generation span all of them at once."""
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+    pdfs = []
+    for f in files:
+        if f.content_type not in ("application/pdf", "application/x-pdf") and not f.filename.lower().endswith(".pdf"):
+            raise HTTPException(400, f"Expected a PDF file, got '{f.filename}'")
+        pdfs.append((f.filename, await f.read()))
     try:
-        doc_id, structure = jobs.create_document(pdf_bytes)
+        doc_id, structure = jobs.create_document(pdfs)
     except jobs.pdf_parser.ParserError as e:
         raise HTTPException(422, str(e))
     return {"doc_id": doc_id, "structure": structure}
@@ -106,6 +115,21 @@ def get_job(job_id: str):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(404, "Unknown job_id")
+    return _job_view(job)
+
+
+@app.post("/jobs/{job_id}/retry")
+async def retry_job(job_id: str):
+    """Re-runs just this job's failed tasks — whether that's the one
+    épigrafe in a single-item job, or a handful out of a larger batch —
+    without re-uploading the PDF(s) or reselecting scope. Succeeded tasks
+    are left untouched and their decks stay in the zip."""
+    try:
+        job = jobs.retry_failed(job_id)
+    except KeyError:
+        raise HTTPException(404, "Unknown job_id")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return _job_view(job)
 
 
