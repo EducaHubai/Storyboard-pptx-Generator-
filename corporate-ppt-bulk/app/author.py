@@ -22,13 +22,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 import schema
 
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1")
+_MAX_RATE_LIMIT_RETRIES = 5
 _client: OpenAI | None = None
+
+_RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
 
 
 def _get_client() -> OpenAI:
@@ -128,19 +133,35 @@ def _build_user_message(epigrafe: dict, unit_meta: dict, previous_errors: list[s
 
 
 def _call_openai(system_prompt: str, user_message: str, model: str) -> dict:
+    """Retries on 429 (TPM/RPM rate limits) — with a handful of épigrafes
+    generating concurrently (jobs.py caps it at 2), it's easy to burst past
+    a lower-tier org's tokens-per-minute cap even though the account isn't
+    actually out of quota. OpenAI's own error message names how long to
+    wait ("Please try again in 5.5s") — honor that when present, otherwise
+    fall back to exponential backoff. This is orthogonal to
+    generate_plan()'s validation retry below (that one re-prompts the
+    model over a bad *shape*; this one just waits out a transient 429)."""
     client = _get_client()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "epigrafe_plan", "strict": True, "schema": schema.PLAN_JSON_SCHEMA},
-        },
-    )
-    return json.loads(response.choices[0].message.content)
+    for attempt in range(_MAX_RATE_LIMIT_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "epigrafe_plan", "strict": True, "schema": schema.PLAN_JSON_SCHEMA},
+                },
+            )
+            return json.loads(response.choices[0].message.content)
+        except RateLimitError as e:
+            if attempt == _MAX_RATE_LIMIT_RETRIES - 1:
+                raise
+            match = _RETRY_AFTER_RE.search(str(e))
+            wait_s = float(match.group(1)) if match else 2 ** attempt
+            time.sleep(wait_s + 0.5)  # small buffer past what OpenAI asked for
 
 
 def generate_plan(epigrafe: dict, unit_meta: dict, language: str = "English", model: str | None = None) -> dict:
