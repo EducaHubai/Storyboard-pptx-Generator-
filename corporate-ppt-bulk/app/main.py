@@ -3,10 +3,16 @@
     GET  /                     — single-page UI (static/index.html)
     POST /documents          — upload PDF, parse, return {doc_id, structure}
     POST /jobs                — start a background generation job for a scope
-    GET  /jobs/{job_id}       — poll status (per-épigrafe progress/errors)
-    POST /jobs/{job_id}/retry — re-run only this job's failed épigrafes
+    GET  /jobs/{job_id}       — poll status (per-épigrafe progress/errors, ETA)
+    POST /jobs/{job_id}/cancel — stop starting any more not-yet-started épigrafes
+    POST /jobs/{job_id}/retry — re-run only this job's failed/skipped épigrafes
     GET  /jobs/{job_id}/download — download the finished zip
     GET  /health              — liveness + config check
+
+Jobs over jobs.AUTOSAVE_THRESHOLD épigrafes are persisted to disk as they
+run; load_persisted_jobs() (called at startup, below) recovers them after
+a crash/redeploy so an already-open browser tab's polling picks the job
+back up instead of hitting a 404.
 
 No auth layer here on purpose — Coolify's own access protection is the
 boundary (see README).
@@ -15,6 +21,7 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 import zipfile
 from typing import Any, Optional
 
@@ -27,6 +34,13 @@ import jobs
 app = FastAPI(title="corporate-ppt-bulk")
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+@app.on_event("startup")
+def _recover_persisted_jobs():
+    recovered = jobs.load_persisted_jobs()
+    if recovered:
+        print(f"Recovered {recovered} autosave job(s) from a previous run", file=sys.stderr)
 
 _PDF_CONTENT_TYPES = ("application/pdf", "application/x-pdf")
 _ZIP_CONTENT_TYPES = ("application/zip", "application/x-zip-compressed", "application/x-zip")
@@ -142,6 +156,8 @@ def _job_view(job: dict) -> dict:
         "doc_id": job["doc_id"],
         "status": job["status"],
         "download_ready": job["download_ready"],
+        "cancelled": job.get("cancelled", False),
+        "estimated_seconds_remaining": jobs.compute_eta_seconds(job),
         "tasks": [
             {
                 "modulo": t["modulo"],
@@ -166,12 +182,27 @@ def get_job(job_id: str):
     return _job_view(job)
 
 
+@app.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """Stops a running job from starting any more not-yet-started
+    épigrafes. Up to 2 already in flight (the concurrency cap) are left
+    to finish rather than force-killed. Everything skipped is retryable
+    afterward via POST /jobs/{job_id}/retry, same as a real failure."""
+    try:
+        job = jobs.cancel_job(job_id)
+    except KeyError:
+        raise HTTPException(404, "Unknown job_id")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _job_view(job)
+
+
 @app.post("/jobs/{job_id}/retry")
 async def retry_job(job_id: str):
-    """Re-runs just this job's failed tasks — whether that's the one
-    épigrafe in a single-item job, or a handful out of a larger batch —
-    without re-uploading the PDF(s) or reselecting scope. Succeeded tasks
-    are left untouched and their decks stay in the zip."""
+    """Re-runs just this job's failed or skipped (stopped) tasks — whether
+    that's the one épigrafe in a single-item job, or a handful out of a
+    larger batch — without re-uploading the PDF(s) or reselecting scope.
+    Succeeded tasks are left untouched and their decks stay in the zip."""
     try:
         job = jobs.retry_failed(job_id)
     except KeyError:

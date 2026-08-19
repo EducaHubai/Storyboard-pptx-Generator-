@@ -143,6 +143,13 @@
   }
   .btn-retry:hover:not(:disabled) { background: rgba(196,59,59,0.06); }
   .btn-retry:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-stop {
+    padding: 12px 26px; min-height: 44px; border-radius: 6px; background: #fff; color: var(--negro);
+    font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: 1px solid var(--border);
+    cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .btn-stop:hover:not(:disabled) { border-color: var(--negro); background: #FAFAFA; }
+  .btn-stop:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .progress-track { width: 100%; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 20px 0 8px; }
   .progress-fill { height: 100%; background: var(--gradient); border-radius: 4px; transition: width 300ms ease; }
@@ -165,6 +172,7 @@
   .status-pending, .status-running { background: rgba(46,122,190,0.1); color: var(--azulMedio); }
   .status-done { background: rgba(96,191,184,0.15); color: #1f7d76; }
   .status-error { background: rgba(196,59,59,0.12); color: var(--errorText); }
+  .status-skipped { background: rgba(150,48,88,0.08); color: var(--burdeos); }
 
   .error-banner {
     display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-radius: 6px;
@@ -588,10 +596,20 @@ async function startJob() {
 }
 
 // ── Screen 3: Progress ───────────────────────────────────────
+function formatEta(seconds) {
+  if (seconds == null) return "Estimating time remaining…";
+  if (seconds < 5) return "Almost done…";
+  const mins = Math.round(seconds / 60);
+  if (mins < 1) return `~${Math.round(seconds)}s remaining`;
+  if (mins === 1) return "~1 min remaining";
+  return `~${mins} min remaining`;
+}
+
 function renderProgress() {
   const wrap = document.createElement("div");
   const job = state.job;
-  const doneCount = job.tasks.filter((t) => t.status === "done" || t.status === "error").length;
+  const doneCount = job.tasks.filter((t) => t.status === "done" || t.status === "error" || t.status === "skipped").length;
+  const errorCount = job.tasks.filter((t) => t.status === "error").length;
   const pct = job.tasks.length ? Math.round((doneCount / job.tasks.length) * 100) : 0;
   wrap.innerHTML = `
     <span class="eyebrow">Step 3 of 3 — Generating</span>
@@ -599,17 +617,45 @@ function renderProgress() {
     <div class="progress-track" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
       <div class="progress-fill" style="width:${pct}%;"></div>
     </div>
-    <p class="progress-caption">${pct}% complete</p>
+    <p class="progress-caption">${pct}% complete — ${escapeHtml(formatEta(job.estimated_seconds_remaining))}</p>
     <p class="lead">This runs 2 at a time in the background — you can leave this open or come back later
-    (job id: ${escapeHtml(job.job_id)}).</p>
+    (job id: ${escapeHtml(job.job_id)}).${errorCount > 0
+      ? ` <strong>${errorCount} failed so far</strong> — they won't stop the rest, and you can retry just those once this finishes.`
+      : ""}</p>
+    ${job.cancelled ? `<p class="lead" style="color:var(--errorText);"><strong>Stopping</strong> — finishing what's already in progress (up to 2), skipping the rest. They'll be retryable once this settles.</p>` : ""}
   `;
   wrap.prepend(renderStepper(2));
+
+  if (!job.cancelled) {
+    const stopBtn = document.createElement("button");
+    stopBtn.className = "btn-stop";
+    stopBtn.disabled = state.loading;
+    stopBtn.textContent = state.loading ? "Stopping…" : "■ Stop";
+    stopBtn.style.marginBottom = "20px";
+    stopBtn.onclick = stopJob;
+    wrap.appendChild(stopBtn);
+  }
+
   const list = document.createElement("div");
   list.className = "task-list";
-  list.style.marginTop = "28px";
+  list.style.marginTop = "8px";
   for (const t of job.tasks) list.appendChild(renderTaskRow(t));
   wrap.appendChild(list);
   return wrap;
+}
+
+async function stopJob() {
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${state.jobId}/cancel`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.job = data;
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
 }
 
 function renderTaskRow(t) {
@@ -667,10 +713,12 @@ function renderResult() {
   const wrap = document.createElement("div");
   const job = state.job;
   const successCount = job.tasks.filter((t) => t.status === "done").length;
-  const failed = job.tasks.filter((t) => t.status === "error");
+  const failed = job.tasks.filter((t) => t.status === "error" || t.status === "skipped");
+  const skippedCount = job.tasks.filter((t) => t.status === "skipped").length;
   wrap.innerHTML = `
     <span class="eyebrow">Done</span>
     <h1>${successCount} of ${job.tasks.length} deck${job.tasks.length === 1 ? "" : "s"} generated</h1>
+    ${job.cancelled && skippedCount > 0 ? `<p class="lead">Stopped early — ${skippedCount} skipped before they started. Retry below to finish them.</p>` : ""}
   `;
 
   const actionsRow = document.createElement("div");
@@ -688,7 +736,7 @@ function renderResult() {
     const retryBtn = document.createElement("button");
     retryBtn.className = "btn-retry";
     retryBtn.disabled = state.loading;
-    retryBtn.textContent = state.loading ? "Retrying…" : `↻ Retry ${failed.length} failed`;
+    retryBtn.textContent = state.loading ? "Retrying…" : `↻ Retry ${failed.length} incomplete`;
     retryBtn.onclick = retryFailed;
     actionsRow.appendChild(retryBtn);
   }
@@ -696,7 +744,7 @@ function renderResult() {
     const msg = document.createElement("p");
     msg.className = "lead";
     msg.style.margin = "0"; msg.style.alignSelf = "center";
-    msg.textContent = "Nothing generated yet — every épigrafe hit an error. Check the reasons below, then retry.";
+    msg.textContent = "Nothing generated yet — every épigrafe hit an error or was skipped. Check below, then retry.";
     actionsRow.appendChild(msg);
   }
   wrap.appendChild(actionsRow);

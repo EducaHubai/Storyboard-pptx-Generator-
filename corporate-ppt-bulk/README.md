@@ -101,25 +101,45 @@ curl -s -X POST "$BASE/jobs" -H "Content-Type: application/json" -d '{
   "selection": {"level": "formacion", "items": []}
 }'
 
-# 3. Consultar progreso
+# 3. Consultar progreso — incluye "estimated_seconds_remaining" (null hasta
+#    que termina el primer epígrafe, luego una estimación en base al ritmo real)
 curl -s "$BASE/jobs/JOB_ID" | jq
+
+# 3b. Parar el job — deja de arrancar epígrafes que no habían empezado
+#     (marcados "skipped"); los que ya estaban en curso (máx. 2) terminan solos
+curl -s -X POST "$BASE/jobs/JOB_ID/cancel" | jq
 
 # 4. Descargar el zip cuando "download_ready": true
 curl -s "$BASE/jobs/JOB_ID/download" -o decks.zip
 
-# 5. Si algo falló (uno de N, o el único epígrafe de un job de 1), reintenta
-#    solo lo fallido — no hace falta volver a subir el PDF ni reelegir scope.
-#    Los que ya salieron bien se quedan tal cual en el zip.
+# 5. Si algo falló o quedó "skipped" (uno de N, o el único epígrafe de un job
+#    de 1), reintenta solo eso — no hace falta volver a subir el PDF ni
+#    reelegir scope. Los que ya salieron bien se quedan tal cual en el zip.
 curl -s -X POST "$BASE/jobs/JOB_ID/retry" | jq
 ```
 
 ## Límites conocidos (v1)
 
-- **Estado en memoria**: los documentos parseados y los jobs viven en RAM del
-  proceso. Un redeploy/reinicio los borra (los zips ya generados sobreviven si
-  montaste `/srv/data` como volumen, pero tendrás que volver a llamar a
-  `/documents` para seguir generando). Para producción seria, esto se movería
-  a Redis/Postgres — no incluido aquí para no sobre-construir una v1.
+- **Estado en memoria, con autosave a partir de 50 epígrafes**: los
+  documentos parseados y los jobs pequeños (≤50 epígrafes) viven solo en RAM
+  — un redeploy/reinicio los borra sin más. Un job de más de 50 epígrafes
+  (`jobs.AUTOSAVE_THRESHOLD`) escribe cada `.pptx` a disco (`/srv/data/jobs/`)
+  en cuanto termina y persiste el estado del job tras cada cambio, en vez de
+  guardar todo solo en memoria hasta el final. Si el proceso muere a mitad
+  (crash, OOM, redeploy) montando `/srv/data` como volumen, al arrancar de
+  nuevo `load_persisted_jobs()` recupera esos jobs: lo que ya estaba "done"
+  se queda así, lo que estaba a medias vuelve a quedar como fallo reintentable
+  (nunca se pierde en un estado fantasma). Si dejaste la pestaña abierta,
+  el polling normal (`GET /jobs/{job_id}`) recoge el job recuperado solo con
+  que el proceso vuelva a estar arriba — no hace falta ninguna acción nueva.
+  Esto solo protege contra un crash del *proceso*; si `/srv/data` no está
+  montado como volumen persistente, un contenedor nuevo tampoco tiene esos
+  archivos y no hay nada que recuperar.
+- **Parar un job en curso**: el botón "Stop" (o `POST /jobs/{id}/cancel`) deja
+  de arrancar epígrafes que no habían empezado (quedan "skipped", reintentables
+  después); los que ya estaban corriendo (máx. 2, por la concurrencia) se dejan
+  terminar solos — no hay forma segura de abortar a mitad una llamada
+  bloqueante a OpenAI o al render.
 - **Instancia única**: no pensado para escalar horizontalmente (el job vive en
   la memoria de un solo proceso).
 - **Concurrencia**: cada job procesa 2 epígrafes en paralelo (llamada a OpenAI

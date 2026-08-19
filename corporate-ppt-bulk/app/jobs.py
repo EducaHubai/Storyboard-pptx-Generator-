@@ -1,22 +1,38 @@
-"""In-memory document/job store + background orchestration.
+"""Document/job store + background orchestration.
 
-Per the README's known v1 limits: documents and jobs live in this
-process's RAM (a redeploy/restart loses them — only already-finished
-zips under DATA_DIR survive if it's mounted as a volume), this isn't
-built to scale horizontally, and each job renders 2 épigrafes at a time
-(author.generate_plan + render) to avoid saturating OpenAI rate limits or
-CPU (Chromium screenshots aren't free). A task that fails (OpenAI error,
-still-invalid plan after retry, render error) is marked "error" with the
-message — the rest of the job keeps going; re-run just that épigrafe with
-a fresh job if needed.
+Small jobs (≤50 épigrafes) stay exactly as before: pure in-memory,
+zip assembled once at the end from bytes held on each task. Nothing
+about that path changed.
+
+Bigger jobs (>50 épigrafes — AUTOSAVE_THRESHOLD) get durability that
+actually matters at that scale: each rendered .pptx is written straight
+to DATA_DIR/jobs/{job_id}/decks/ as soon as it's done (never held in
+memory), and the job's state is persisted to DATA_DIR/jobs/{job_id}/job.json
+after every task status change. If the process dies mid-job (crash,
+OOM, redeploy), load_persisted_jobs() — called once at startup — reloads
+every such job, marks whatever was still "pending"/"running" as a
+retryable "error" (never left silently stuck), and rebuilds the zip from
+whatever decks already made it to disk. An open browser tab just keeps
+polling GET /jobs/{job_id} through the outage and picks the recovered
+state back up automatically — no new frontend concept needed, it's the
+same "Retry N failed" flow used for any other failure.
+
+Jobs can also be stopped mid-run (cancel_job): tasks not yet started are
+marked "skipped" and left retryable; tasks already in flight (at most 2,
+per the concurrency limiter) are left to finish rather than force-killed
+— there's no safe way to abort a blocking OpenAI/Playwright call
+mid-thread.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
+import shutil
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 
@@ -30,6 +46,11 @@ import render as render_engine  # noqa: E402
 
 DATA_DIR = os.environ.get("DATA_DIR", "/srv/data")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# Above this many épigrafes, a job gets disk-backed durability (immediate
+# per-deck writes + persisted job.json) instead of pure in-memory state —
+# the point where losing everything to a crash actually hurts.
+AUTOSAVE_THRESHOLD = 50
 
 DOCUMENTS: dict[str, dict] = {}
 JOBS: dict[str, dict] = {}
@@ -106,7 +127,9 @@ def _all_epigrafes_for_modulo(structure: dict, modulo_code: str):
 
 def resolve_selection(structure: dict, selection: dict) -> list[dict]:
     """Returns a flat list of task dicts (one per épigrafe to generate),
-    each carrying everything author.generate_plan/render need."""
+    each carrying everything author.generate_plan/render need — including
+    the real source text, so a persisted/recovered job never needs to
+    re-read the original document to retry a task."""
     level = selection.get("level")
     items = selection.get("items") or []
     certificado = structure.get("certificado", "")
@@ -125,6 +148,9 @@ def resolve_selection(structure: dict, selection: dict) -> list[dict]:
             "status": "pending",
             "error": None,
             "filename": None,
+            "content_warning": None,
+            "started_at": None,
+            "finished_at": None,
         })
 
     if level == "epigrafe":
@@ -176,6 +202,88 @@ def resolve_selection(structure: dict, selection: dict) -> list[dict]:
     return tasks
 
 
+# ── Persistence (autosave-tier jobs only) ───────────────────
+def _job_dir(job_id: str) -> str:
+    return os.path.join(DATA_DIR, "jobs", job_id)
+
+
+def _decks_dir(job_id: str) -> str:
+    return os.path.join(_job_dir(job_id), "decks")
+
+
+def _deck_path(job_id: str, task: dict) -> str:
+    return os.path.join(_decks_dir(job_id), _zip_arcname(task))
+
+
+def _persist_job(job: dict) -> None:
+    """Writes job.json for autosave-tier jobs only — a no-op for smaller
+    jobs, which stay pure in-memory exactly as before. Every field on a
+    job/task dict is already JSON-safe (autosave jobs never hold raw
+    pptx bytes in the task dict — those go straight to disk instead), so
+    this can serialize the dict directly."""
+    if not job.get("autosave"):
+        return
+    d = _job_dir(job["job_id"])
+    os.makedirs(d, exist_ok=True)
+    tmp_path = os.path.join(d, "job.json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(job, f)
+    os.replace(tmp_path, os.path.join(d, "job.json"))  # atomic on POSIX
+
+
+def _build_zip_from_decks_dir(job_id: str) -> str:
+    decks_dir = _decks_dir(job_id)
+    zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if os.path.isdir(decks_dir):
+            for root, _dirs, files in os.walk(decks_dir):
+                for fn in files:
+                    full = os.path.join(root, fn)
+                    zf.write(full, os.path.relpath(full, decks_dir))
+    return zip_path
+
+
+def load_persisted_jobs() -> int:
+    """Call once at process startup. Reloads any autosave-tier jobs left
+    on disk by a previous process (crash, OOM, redeploy) so a still-open
+    browser tab's polling picks the job back up instead of hitting a 404.
+    Any task that was "pending" or "running" when the process died is
+    reset to "error" — nothing is left stuck silently; it's retryable via
+    the normal retry_failed() flow, same as any other failure. Returns
+    how many jobs were recovered."""
+    jobs_root = os.path.join(DATA_DIR, "jobs")
+    if not os.path.isdir(jobs_root):
+        return 0
+    recovered = 0
+    for job_id in os.listdir(jobs_root):
+        job_json = os.path.join(jobs_root, job_id, "job.json")
+        if not os.path.isfile(job_json):
+            continue
+        try:
+            with open(job_json, encoding="utf-8") as f:
+                job = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        for t in job.get("tasks", []):
+            if t.get("status") in ("pending", "running"):
+                t["status"] = "error"
+                t["error"] = "Interrupted — the server restarted before this finished. Retry to complete it."
+
+        job["status"] = "done"
+        job["cancel_requested"] = False
+        zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
+        if not os.path.isfile(zip_path):
+            zip_path = _build_zip_from_decks_dir(job_id)
+        job["zip_path"] = zip_path
+        job["download_ready"] = True
+
+        JOBS[job_id] = job
+        _persist_job(job)
+        recovered += 1
+    return recovered
+
+
 # ── Jobs ─────────────────────────────────────────────────────
 def create_job(doc_id: str, selection: dict, language: str = "English", model: str | None = None) -> dict:
     structure = get_document(doc_id)
@@ -194,8 +302,13 @@ def create_job(doc_id: str, selection: dict, language: str = "English", model: s
         "zip_path": None,
         "download_ready": False,
         "error": None,
+        "autosave": len(tasks) > AUTOSAVE_THRESHOLD,
+        "cancel_requested": False,
+        "cancelled": False,
+        "created_at": time.time(),
     }
     JOBS[job_id] = job
+    _persist_job(job)
     asyncio.create_task(_run_job(job_id))
     return job
 
@@ -211,19 +324,56 @@ def get_job_zip_path(job_id: str) -> str | None:
     return None
 
 
+def compute_eta_seconds(job: dict) -> float | None:
+    """Rough remaining-time estimate from the average duration of tasks
+    that have actually finished so far — None until at least one has, so
+    the UI can show "estimating…" rather than a fake number from nothing."""
+    durations = [
+        t["finished_at"] - t["started_at"]
+        for t in job["tasks"]
+        if t.get("status") == "done" and t.get("started_at") and t.get("finished_at")
+    ]
+    if not durations:
+        return None
+    avg = sum(durations) / len(durations)
+    remaining = sum(1 for t in job["tasks"] if t["status"] in ("pending", "running"))
+    if remaining == 0:
+        return 0.0
+    effective_parallelism = min(2, remaining)
+    return avg * remaining / effective_parallelism
+
+
+def cancel_job(job_id: str) -> dict:
+    """Stops a running job from starting any more not-yet-started tasks.
+    Tasks already in flight (at most 2) are left to finish — there's no
+    safe way to abort a blocking OpenAI/render call mid-thread. Everything
+    skipped is retryable afterward exactly like a failed task."""
+    job = JOBS.get(job_id)
+    if job is None:
+        raise KeyError(job_id)
+    if job["status"] != "running":
+        raise ValueError("Job isn't running")
+    job["cancel_requested"] = True
+    job["cancelled"] = True
+    _persist_job(job)
+    return job
+
+
 def retry_failed(job_id: str) -> dict:
-    """Re-runs only this job's failed tasks — reuses the doc_id/structure
-    and the job's original language/model already in memory, so the
-    caller never has to re-upload the PDF(s) or reselect scope just
-    because one épigrafe (out of one, or one out of many) hit a
-    transient failure. Newly-succeeded decks are appended to the
-    existing zip rather than rebuilding it from scratch."""
+    """Re-runs only this job's failed/skipped tasks — reuses the job's
+    original language/model already in memory (or reloaded from disk
+    after a crash), so the caller never has to re-upload the PDF(s) or
+    reselect scope just because one épigrafe (out of one, or one out of
+    many) hit a transient failure, got skipped by a stop, or was
+    interrupted by a restart. Newly-succeeded decks are appended to the
+    existing zip rather than rebuilding it from scratch (small jobs) or
+    written straight to disk and re-zipped (autosave-tier jobs)."""
     job = JOBS.get(job_id)
     if job is None:
         raise KeyError(job_id)
     if job["status"] == "running":
         raise ValueError("Job is still running — wait for it to finish before retrying")
-    failed = [t for t in job["tasks"] if t["status"] == "error"]
+    failed = [t for t in job["tasks"] if t["status"] in ("error", "skipped")]
     if not failed:
         raise ValueError("No failed tasks to retry")
 
@@ -232,13 +382,19 @@ def retry_failed(job_id: str) -> dict:
         t["error"] = None
     job["status"] = "running"
     job["download_ready"] = False
+    job["cancel_requested"] = False
+    job["cancelled"] = False
+    _persist_job(job)
     asyncio.create_task(_run_retry(job_id, failed))
     return job
 
 
-def _render_one_task(task: dict, language: str, model: str | None) -> None:
+def _render_one_task(task: dict, language: str, model: str | None, deck_path: str | None) -> None:
     """Runs in a worker thread: generate the plan (OpenAI, with its own
-    internal retry), then render it to .pptx bytes. Mutates task in place."""
+    internal retry), then render it to .pptx. Mutates task in place.
+    When `deck_path` is given (autosave-tier jobs), the file is written
+    straight to disk and never held in memory; otherwise its bytes are
+    kept on the task dict until the job's final in-memory zip step."""
     unit_meta = {
         "unidad_nombre": task["unidad_nombre"],
         "modulo": task["modulo"],
@@ -254,53 +410,64 @@ def _render_one_task(task: dict, language: str, model: str | None) -> None:
             render_engine.embed_fonts(out_path)
         except Exception as font_err:  # non-fatal: ship without embedded fonts
             print(f"WARNING: font embedding failed for {task['codigo']}: {font_err}", file=sys.stderr)
-        with open(out_path, "rb") as f:
-            task["_pptx_bytes"] = f.read()
 
-    task["filename"] = f"{_clean_filename(task['codigo'])} - {_clean_filename(task['titulo'])}.pptx"
+        task["filename"] = f"{_clean_filename(task['codigo'])} - {_clean_filename(task['titulo'])}.pptx"
+
+        if deck_path:
+            os.makedirs(os.path.dirname(deck_path), exist_ok=True)
+            shutil.copyfile(out_path, deck_path)
+        else:
+            with open(out_path, "rb") as f:
+                task["_pptx_bytes"] = f.read()
+
     task["content_warning"] = plan.get("contentWarning")
 
 
 def _zip_arcname(task: dict) -> str:
     folder = _clean_filename(f"{task['modulo']} - {task['modulo_nombre']}")
-    return f"{folder}/{task['filename']}"
-
-
-async def _run_retry(job_id: str, tasks: list[dict]) -> None:
-    job = JOBS[job_id]
-    await _run_tasks(job, tasks)
-
-    # Append-only: previously successful tasks already have their bytes
-    # written into the zip and popped from memory (see _run_job below) —
-    # only newly-done tasks from this retry round need adding.
-    newly_done = [t for t in tasks if t["status"] == "done"]
-    if newly_done:
-        with zipfile.ZipFile(job["zip_path"], "a", zipfile.ZIP_DEFLATED) as zf:
-            for task in newly_done:
-                zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
-
-    job["download_ready"] = True
-    job["status"] = "done"
+    filename = task["filename"] or f"{_clean_filename(task['codigo'])} - {_clean_filename(task['titulo'])}.pptx"
+    return f"{folder}/{filename}"
 
 
 async def _run_tasks(job: dict, tasks: list[dict]) -> None:
     """Runs `tasks` (a subset or all of job["tasks"]) against the shared
-    concurrency limiter. Used both for a job's first pass and for
-    retry_failed()'s re-run of just the failed subset."""
-    async def run_task(task):
-        task["status"] = "running"
-        try:
-            await anyio.to_thread.run_sync(
-                _render_one_task, task, job["language"], job["model"],
-                limiter=_CONCURRENCY_LIMITER,
-            )
-            task["status"] = "done"
-        except Exception as e:
-            task["status"] = "error"
-            task["error"] = str(e)
+    concurrency limiter. Used for a job's first pass and for
+    retry_failed()'s re-run of just the failed/skipped subset. Honors
+    cancel_job(): any task not yet started when the flag is set is marked
+    "skipped" instead of run.
 
-    # _CONCURRENCY_LIMITER caps real concurrency at 2; gather here just lets
-    # all tasks queue against it without a separate semaphore layer.
+    The cancel check happens *inside* the acquired limiter slot, not
+    before — checking before acquiring doesn't actually gate on anything,
+    since asyncio schedules every task's coroutine up to its first real
+    suspension point almost immediately. With the check before the
+    limiter, a batch of 60 tasks could all race past it (all still
+    "pending", flag still False) before cancel_job() is even called,
+    leaving nothing to skip. Only 2 tasks can be past the `async with`
+    at once, so the other N-2 are genuinely waiting — by the time a slot
+    frees up, a since-set flag is reliably seen."""
+    autosave = job.get("autosave", False)
+
+    async def run_task(task):
+        async with _CONCURRENCY_LIMITER:
+            if job.get("cancel_requested") and task["status"] == "pending":
+                task["status"] = "skipped"
+                _persist_job(job)
+                return
+
+            task["status"] = "running"
+            task["started_at"] = time.time()
+            _persist_job(job)
+            deck_path = _deck_path(job["job_id"], task) if autosave else None
+            try:
+                await anyio.to_thread.run_sync(_render_one_task, task, job["language"], job["model"], deck_path)
+                task["status"] = "done"
+            except Exception as e:
+                task["status"] = "error"
+                task["error"] = str(e)
+            finally:
+                task["finished_at"] = time.time()
+                _persist_job(job)
+
     async with anyio.create_task_group() as tg:
         for t in tasks:
             tg.start_soon(run_task, t)
@@ -309,15 +476,41 @@ async def _run_tasks(job: dict, tasks: list[dict]) -> None:
 async def _run_job(job_id: str) -> None:
     job = JOBS[job_id]
     job["status"] = "running"
+    _persist_job(job)
     await _run_tasks(job, job["tasks"])
 
-    zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for task in job["tasks"]:
-            if task["status"] != "done":
-                continue
-            zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
+    if job.get("autosave"):
+        zip_path = _build_zip_from_decks_dir(job_id)
+    else:
+        zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for task in job["tasks"]:
+                if task["status"] != "done":
+                    continue
+                zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
 
     job["zip_path"] = zip_path
     job["download_ready"] = True
     job["status"] = "done"
+    _persist_job(job)
+
+
+async def _run_retry(job_id: str, tasks: list[dict]) -> None:
+    job = JOBS[job_id]
+    await _run_tasks(job, tasks)
+
+    if job.get("autosave"):
+        job["zip_path"] = _build_zip_from_decks_dir(job_id)
+    else:
+        # Append-only: previously successful tasks already have their bytes
+        # written into the zip and popped from memory — only newly-done
+        # tasks from this retry round need adding.
+        newly_done = [t for t in tasks if t["status"] == "done"]
+        if newly_done:
+            with zipfile.ZipFile(job["zip_path"], "a", zipfile.ZIP_DEFLATED) as zf:
+                for task in newly_done:
+                    zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
+
+    job["download_ready"] = True
+    job["status"] = "done"
+    _persist_job(job)
