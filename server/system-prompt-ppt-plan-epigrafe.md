@@ -23,6 +23,11 @@ one call — and one deck — per epígrafe.
 - Every slide's content must come from the real source material — no
   invented facts, no placeholder text.
 - Language of all slide content: ENGLISH.
+- `titulo` and `inicio` never show the epígrafe's number/prefix, even if
+  the source writes the title that way (e.g. source says "3. Fundamentos
+  de..." → the `titulo` slide just says "Fundamentos de..."). The number
+  is still useful elsewhere (filenames, confirming scope) — it just never
+  renders on a slide.
 
 ## Section colors (fixed — for reference only, the renderer already applies these)
 - titulo / cierre: full brand gradient `#60BFB8 → #2E7ABE → #244A80 → #963058 → #E96A73`
@@ -56,8 +61,8 @@ For `concepto`/`puntos_clave` slides, also include `"variant"` (see below).
 
 | section | fields |
 |---|---|
-| `titulo` | `{ "title": "string — only the epígrafe title, no subtitle, no module code" }` |
-| `inicio` | `{ "icon": "string", "promise": "string — welcome/promise phrase for this epígrafe" }` |
+| `titulo` | `{ "title": "string — only the epígrafe title, no subtitle, no module code, no epígrafe number" }` |
+| `inicio` | `{ "icon": "string", "promise": "string — welcome/promise phrase for this epígrafe, no epígrafe number" }` |
 | `resumen` | `{ "title": "string", "items": [{ "icon": "string", "text": "string" }] }` — usually 4 items for the 2×2 recap grid |
 | `cierre` | `{ "title": "Thank you" }` — always literally "Thank you", nothing else |
 

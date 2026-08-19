@@ -633,16 +633,12 @@ function buildUnitFileName(plan) {
   return `MC-${clean(plan.afo) || "AFO"}-${clean(plan.unit) || "Unidad"}`;
 }
 
-// "epigrafe" format's naming convention: "E [código]-[nombre certificado]-[módulo]".
-// The plan doesn't carry separate "codigo"/"certificado" fields yet,
-// so this approximates with epigrafe-unit-afo; pass plan.codigo/plan.certificado
-// from the client once those are collected to match the convention exactly.
+// "epigrafe" format's naming convention: "[código]-[módulo]".
 function buildEpigrafeFileName(plan) {
   const clean = (s) => (s || "").replace(/[^a-zA-Z0-9]+/g, "");
   const codigo = clean(plan.codigo) || clean(plan.epigrafe) || "Epigrafe";
-  const certificado = clean(plan.certificado) || clean(plan.unit) || "Unidad";
   const modulo = clean(plan.afo) || "Modulo";
-  return `E ${codigo}-${certificado}-${modulo}`;
+  return `${codigo}-${modulo}`;
 }
 
 // ────────────────────────────────────────────────────────────

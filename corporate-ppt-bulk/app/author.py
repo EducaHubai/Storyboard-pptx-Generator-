@@ -81,6 +81,11 @@ avatar in HeyGen.
   this — only the content you write is affected.)
 - `cierre.fields.title` is a short closing phrase equivalent to "Thank
   you", written in {language}.
+- `titulo` and `inicio` never show the epígrafe's number/prefix, even if
+  the source writes the title that way (e.g. source says "3. Fundamentos
+  de..." — the `titulo` slide's title just says "Fundamentos de..."). The
+  number is still useful elsewhere (filenames, matching scope) — it just
+  never renders on a slide.
 
 ## Layout variants for concepto / puntos_clave — pick one per slide
 

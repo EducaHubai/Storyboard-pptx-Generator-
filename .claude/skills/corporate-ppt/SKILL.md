@@ -66,12 +66,21 @@ deck.
 
 Fixed order, six sections:
 
-1. **TÃ­tulo** â 1 slide. Only the epÃ­grafe title. No subtitle, no module code.
-2. **Inicio** â 1 slide. A welcome/promise phrase for the epÃ­grafe.
+1. **TÃ­tulo** â 1 slide. Only the epÃ­grafe title text itself â no subtitle,
+   no module code, and no epÃ­grafe number/prefix even if the source writes
+   the title that way (e.g. source says "3. Fundamentos de..." â slide just
+   says "Fundamentos de...").
+2. **Inicio** â 1 slide. A welcome/promise phrase for the epÃ­grafe â same
+   rule: no epÃ­grafe number anywhere on this slide either.
 3. **Conceptos** â 3â5 slides, one core concept (or tight group) per slide.
 4. **Puntos Clave** â 3â5 slides, key takeaways/steps/insights.
 5. **Resumen** â 1 slide, recap grid.
 6. **Cierre** â 1 slide. Only "Thank you".
+
+None of the opening slides (TÃ­tulo, Inicio) should show the epÃ­grafe's
+number. That number is still useful for Step 8's filename and for
+confirming which epÃ­grafe you're building in Step 1 â it just never renders
+on a slide.
 
 The fixed slides (TÃ­tulo, Inicio, Resumen, Cierre) total 4. **Conceptos +
 Puntos Clave combined must total 8â11 slides** so the deck lands in the
@@ -125,6 +134,13 @@ Fixed sections' `fields` shapes: `titulo â {title}` Â· `cierre â {title}` (d
 
 - Max ~20 visible words per slide, max 3 ideas/bullets. Short headline
   phrases, never paragraphs.
+- **32px is the deck-wide font-size floor.** `slides.css` already enforces
+  this on every visible text element (labels, captions, card/step text) â
+  nothing in the rendered deck goes below 16pt in the final `.pptx`. This is
+  baked in; you don't choose or override font sizes per slide. The one
+  exception is the `numero_hero` variant's giant faded background numeral
+  (`01`, `02`...), which is decorative watermark art, not readable body
+  text, and stays far larger than the floor.
 - The HeyGen avatar overlay only appears on TÃ­tulo, Inicio, and Cierre â so
   those three can carry a little more presence; Conceptos/Puntos
   Clave/Resumen use the full canvas for content since no avatar sits there.
@@ -169,9 +185,26 @@ the fonts installed locally.
 
 ## Step 8 â filename and delivery
 
-Name each file `E [cÃ³digo]-[nombre certificado]-[mÃ³dulo].pptx` per the unit's
-real metadata (ask if any part is missing from the source). Deliver one file
-per epÃ­grafe actually generated â whether that's one file (single epÃ­grafe),
-several (a subset or a whole unit), or many (a whole course across units).
-Hand the file(s) back to the user (e.g. via `SendUserFile`) â don't just
-report success without attaching them.
+Name each file `[cÃ³digo]-[mÃ³dulo].pptx` per the unit's real metadata. If
+either part is missing from the source:
+- If it's a bounded choice (e.g. the cÃ³digo belongs to a known, short list
+  of programs), ask with `AskUserQuestion` / equivalent using those real
+  options rather than a free-text question.
+- If it's genuinely open text (e.g. a code or name with no fixed set of
+  candidates), ask normally in prose â don't force options onto something
+  that isn't actually a choice.
+- If the user says to leave it out for now, proceed without it and use the
+  part you do have for the filename.
+
+Deliver one file per epÃ­grafe actually generated â whether that's one file
+(single epÃ­grafe), several (a subset or a whole unit), or many (a whole
+course across units). If the user chose "all epÃ­grafes" in Step 1, deliver
+one such file per epÃ­grafe, saving every `.pptx` into one shared folder
+named after the unit/mÃ³dulo (e.g. `[cÃ³digo]-[mÃ³dulo]/`) instead of leaving
+them loose or zipping them â a folder keeps each deck as its own openable
+`.pptx` rather than something the user has to extract first. Hand back all
+the files from that folder together in a single `SendUserFile` call (it
+accepts a list of paths) rather than sending the decks one at a time. If
+only a single epÃ­grafe was requested, there's just one file â deliver that
+`.pptx` directly, no folder needed. Either way, don't just report success
+without attaching the actual file(s).

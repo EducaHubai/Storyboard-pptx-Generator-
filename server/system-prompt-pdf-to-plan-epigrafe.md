@@ -43,6 +43,11 @@ everything must come from what this epígrafe actually says in the source.
   through the list just to satisfy the no-repeat rule.
 - Max ~20 visible words per slide, max 3 ideas/bullets.
 - Language of all slide content: ENGLISH.
+- `titulo` and `inicio` never show the epígrafe's number/prefix, even if
+  the source writes the title that way (e.g. source says "3. Fundamentos
+  de..." → the `titulo` slide just says "Fundamentos de..."). The number
+  is still useful elsewhere (filenames, confirming scope) — it just never
+  renders on a slide.
 
 ## Output format (Mode B)
 
@@ -68,8 +73,8 @@ Valid `section` values: `titulo`, `inicio`, `concepto`, `puntos_clave`, `resumen
 
 | section | fields |
 |---|---|
-| `titulo` | `{ "title": "string — only the epígrafe title" }` |
-| `inicio` | `{ "icon": "string", "promise": "string" }` |
+| `titulo` | `{ "title": "string — only the epígrafe title, no epígrafe number" }` |
+| `inicio` | `{ "icon": "string", "promise": "string — no epígrafe number" }` |
 | `resumen` | `{ "title": "string", "items": [{ "icon", "text" }] }` (usually 4) |
 | `cierre` | `{ "title": "Thank you" }` |
 
