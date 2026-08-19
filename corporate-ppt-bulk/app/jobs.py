@@ -411,7 +411,7 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
         except Exception as font_err:  # non-fatal: ship without embedded fonts
             print(f"WARNING: font embedding failed for {task['codigo']}: {font_err}", file=sys.stderr)
 
-        task["filename"] = f"{_clean_filename(task['codigo'])} - {_clean_filename(task['titulo'])}.pptx"
+        task["filename"] = _build_filename(task)
 
         if deck_path:
             os.makedirs(os.path.dirname(deck_path), exist_ok=True)
@@ -423,9 +423,18 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
     task["content_warning"] = plan.get("contentWarning")
 
 
+def _build_filename(task: dict) -> str:
+    """[código módulo]_[número épigrafe]-[nombre épigrafe].pptx — e.g.
+    'C04-01_1.1-Historical evolution of AI.pptx'."""
+    codigo_modulo = _clean_filename(task["modulo"])
+    numero_epigrafe = _clean_filename(task["codigo"])
+    nombre_epigrafe = _clean_filename(task["titulo"])
+    return f"{codigo_modulo}_{numero_epigrafe}-{nombre_epigrafe}.pptx"
+
+
 def _zip_arcname(task: dict) -> str:
     folder = _clean_filename(f"{task['modulo']} - {task['modulo_nombre']}")
-    filename = task["filename"] or f"{_clean_filename(task['codigo'])} - {_clean_filename(task['titulo'])}.pptx"
+    filename = task["filename"] or _build_filename(task)
     return f"{folder}/{filename}"
 
 
