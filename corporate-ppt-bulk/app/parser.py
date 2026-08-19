@@ -1,34 +1,42 @@
-"""Parses an EDUCALLM-format training PDF into its real structure:
+"""Parses a training PDF into its real structure:
 
     acción formativa (certificado) → módulo formativo → unidad didáctica → epígrafe
 
-Calibrated against a real sample export (MC-A1 · Introduction to AI in
-Education), which turned out to differ substantially from the format this
-was originally guessed at:
+Two strategies, tried in order:
 
-  - Structural labels are Spanish literals even when the content itself is
-    English: "Módulo formativo", "Unidad didáctica N", "Índice".
-  - The module title isn't "Module <code>: <name>" — it's a "Módulo
-    formativo" label line followed by a separate "<code> · <name>" line,
-    which then also repeats as a running header on every single page.
-  - There is no visible "N.N" épigrafe code anywhere in the body. Épigrafe
-    headings are plain text (e.g. "Historical evolution of AI") with
-    nothing distinguishing them from H3 subheadings (e.g. "A. Conceptual
-    Origins...") except font size, which plain-text extraction loses.
-  - The one reliable source for exact épigrafe titles is the Índice (TOC)
-    page: each numbered unit line ("1. U1 <title>") is followed by plain,
-    unnumbered lines — the épigrafe titles for that unit, in order. Those
-    exact strings are then found again as heading lines in the body to
-    slice out each épigrafe's real content.
+1. `_parse_educallm_format` — a fast, free, deterministic regex parser
+   calibrated against one real EDUCALLM export (MC-A1 · Introduction to AI
+   in Education): Spanish structural labels ("Módulo formativo", "Unidad
+   didáctica N", "Índice") even when the content itself is English, no
+   visible "N.N" épigrafe codes, and the Índice (TOC) as the only reliable
+   source of exact épigrafe titles (matched verbatim as heading lines in
+   the body to slice out real content). See the functions below for the
+   full detail — this only matches documents shaped exactly like that one.
+
+2. `_parse_generic_via_llm` — used only when #1 raises ParserError (the
+   document doesn't match that exact shape — e.g. a different EDUCALLM
+   course template with English labels and no Índice at all, seen in
+   practice). Hand-coding a new regex strategy per template doesn't scale
+   as more show up, so this asks the OpenAI model already used elsewhere
+   in this app to identify the módulo/unidad/épigrafe hierarchy from the
+   raw text instead. It still never invents content: the model is asked
+   for heading text VERBATIM, and the code only accepts a heading if that
+   exact string (tolerant of line-wrap whitespace) is actually found in
+   the source — any heading it can't verify is dropped, not fabricated.
+   This costs one OpenAI call per upload, but only for documents the free
+   regex path can't already handle.
 
 Uses `pdftotext -layout` (poppler-utils, installed in the Dockerfile).
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import tempfile
 import os
+
+from openai import OpenAI
 
 
 class ParserError(Exception):
@@ -214,7 +222,7 @@ def _slice_unit_epigrafes(lines: list[str], unit_start: int, unit_end: int, titl
     return epigrafes
 
 
-def parse_document(pdf_bytes: bytes) -> dict:
+def _parse_educallm_format(text: str) -> dict:
     """Returns:
     {
       "certificado": "...",
@@ -229,7 +237,6 @@ def parse_document(pdf_bytes: bytes) -> dict:
     Raises ParserError if no module title or no Índice/TOC is found, or if
     the TOC lists épigrafes that can't be found as real body headings.
     """
-    text = _pdf_to_text(pdf_bytes)
     lines = text.split("\n")
 
     modules, toc_by_unit = _parse_modules_and_toc(lines)
@@ -290,3 +297,296 @@ def parse_document(pdf_bytes: bytes) -> dict:
         m.pop("start_index", None)
 
     return {"certificado": certificado, "modulos": modules}
+
+
+# ── Generic fallback: LLM-identified structure, verbatim-matched slicing ──
+
+_STRUCTURE_MODEL = os.environ.get("OPENAI_STRUCTURE_MODEL", "gpt-4.1-mini")
+# Character budget for the structure-identification call. Generous enough
+# for a several-hundred-page export (gpt-4.1-mini's context comfortably
+# fits this many tokens) — only truncated as a last resort so an
+# unusually large document degrades gracefully instead of erroring outright.
+_MAX_STRUCTURE_CHARS = 700_000
+_structure_client: OpenAI | None = None
+
+
+def _get_structure_client() -> OpenAI:
+    global _structure_client
+    if _structure_client is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ParserError(
+                "This PDF doesn't match the known EDUCALLM format, and OPENAI_API_KEY isn't "
+                "configured for the generic structure-detection fallback to run."
+            )
+        _structure_client = OpenAI(api_key=api_key)
+    return _structure_client
+
+
+_STRUCTURE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "certificado": {"type": ["string", "null"]},
+        "running_header": {
+            "type": ["string", "null"],
+            "description": (
+                "The exact text of a header/footer line repeated on most pages (e.g. a "
+                "running module title), copied verbatim, so it can be stripped from "
+                "extracted content. Null if there isn't one."
+            ),
+        },
+        "modulos": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "modulo": {"type": "string", "description": "Module code, e.g. 'C04-01'."},
+                    "nombre": {
+                        "type": "string",
+                        "description": (
+                            "The module's title heading, EXACTLY as it appears in the source "
+                            "text — same characters, case, and punctuation. Used to locate it "
+                            "again by exact match."
+                        ),
+                    },
+                    "unidades": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "unidad": {"type": "integer"},
+                                "nombre": {
+                                    "type": "string",
+                                    "description": "The unit's heading, verbatim as in the source text.",
+                                },
+                                "epigrafes": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "properties": {
+                                            "titulo": {
+                                                "type": "string",
+                                                "description": "The épigrafe/section heading, verbatim as in the source text.",
+                                            },
+                                        },
+                                        "required": ["titulo"],
+                                    },
+                                },
+                            },
+                            "required": ["unidad", "nombre", "epigrafes"],
+                        },
+                    },
+                },
+                "required": ["modulo", "nombre", "unidades"],
+            },
+        },
+    },
+    "required": ["certificado", "running_header", "modulos"],
+}
+
+_STRUCTURE_SYSTEM_PROMPT = """You read the raw text of a training PDF, extracted via pdftotext, and
+identify its real structure: módulo formativo (module) → unidad didáctica
+(unit) → epígrafe (section). Formats vary — labels may be in Spanish or
+English, and there may or may not be a table of contents.
+
+Rules:
+- Every heading you return (module title, unit title, épigrafe title)
+  must be copied EXACTLY as it appears in the source text — same
+  characters, case, and punctuation, character-for-character. Do not
+  paraphrase, translate, or clean it up. It will be located again by an
+  exact text match, so an inexact copy means that section is silently
+  dropped.
+- If you're not confident a heading is real (vs. body text that merely
+  looks like one), leave it out rather than guessing.
+- If you can't identify any reliable módulo/unidad/épigrafe structure at
+  all, return an empty modulos list — don't force a structure onto text
+  that doesn't have one.
+- If a header or footer line repeats near-identically across most pages
+  (e.g. a running module title, or a page number), copy ONE exact
+  instance of it into running_header so it can be stripped from content
+  — or null if you don't see one.
+"""
+
+
+def _extract_structure_via_llm(text: str) -> dict:
+    client = _get_structure_client()
+    trimmed = text[:_MAX_STRUCTURE_CHARS]
+    try:
+        response = client.chat.completions.create(
+            model=_STRUCTURE_MODEL,
+            messages=[
+                {"role": "system", "content": _STRUCTURE_SYSTEM_PROMPT},
+                {"role": "user", "content": trimmed},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "document_structure", "strict": True, "schema": _STRUCTURE_SCHEMA},
+            },
+        )
+        return json.loads(response.choices[0].message.content)
+    except ParserError:
+        raise
+    except Exception as e:
+        raise ParserError(f"Generic structure detection failed (OpenAI call error): {e}") from e
+
+
+def _find_verbatim(text: str, needle: str, start: int) -> tuple[int, int] | None:
+    """Finds `needle` in `text` at or after `start`. Tries an exact
+    substring match first; if the heading wraps across a line break that
+    the model's verbatim copy doesn't reflect, retries with runs of
+    whitespace (including newlines) collapsed to a single space in both
+    the needle and a mapped copy of the haystack, so the original offsets
+    can still be recovered."""
+    if not needle:
+        return None
+    idx = text.find(needle, start)
+    if idx != -1:
+        return idx, idx + len(needle)
+
+    collapsed_needle = re.sub(r"\s+", " ", needle).strip()
+    if not collapsed_needle:
+        return None
+
+    window = text[start:]
+    mapped_chars: list[str] = []
+    index_map: list[int] = []
+    prev_space = False
+    for i, ch in enumerate(window):
+        if ch.isspace():
+            if not prev_space:
+                mapped_chars.append(" ")
+                index_map.append(i)
+            prev_space = True
+        else:
+            mapped_chars.append(ch)
+            index_map.append(i)
+            prev_space = False
+    collapsed_window = "".join(mapped_chars)
+    cidx = collapsed_window.find(collapsed_needle)
+    if cidx == -1:
+        return None
+    orig_start = start + index_map[cidx]
+    orig_end = start + index_map[cidx + len(collapsed_needle) - 1] + 1
+    return orig_start, orig_end
+
+
+def _strip_generic_noise(chunk: str, running_header: str | None) -> str:
+    header_stripped = (running_header or "").strip()
+    out = []
+    for line in chunk.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _PAGE_FOOTER_RE.match(stripped):
+            continue
+        if header_stripped and stripped == header_stripped:
+            continue
+        out.append(stripped)
+    return "\n".join(out).strip()
+
+
+def _parse_generic_via_llm(text: str) -> dict:
+    structure = _extract_structure_via_llm(text)
+    modulos_in = structure.get("modulos") or []
+    if not modulos_in:
+        raise ParserError(
+            "Generic structure detection (via OpenAI) couldn't confidently identify any "
+            "módulo/unidad/épigrafe hierarchy in this document — it may not be a "
+            "training-unit document, or its structure is too irregular to detect."
+        )
+
+    running_header = structure.get("running_header")
+    # Flat list of every accepted heading's start position (any level) —
+    # used so each épigrafe's content stops at the very next heading of
+    # ANY kind, not just the next épigrafe, so it never bleeds into the
+    # next unit's or module's material.
+    all_starts: list[int] = []
+    cursor = 0
+    modulos_out = []
+
+    for m in modulos_in:
+        m_name = (m.get("nombre") or "").strip()
+        m_pos = _find_verbatim(text, m_name, cursor) if m_name else None
+        if m_pos:
+            all_starts.append(m_pos[0])
+            cursor = m_pos[1]
+        unidades_out = []
+        for u in m.get("unidades") or []:
+            u_name = (u.get("nombre") or "").strip()
+            u_pos = _find_verbatim(text, u_name, cursor) if u_name else None
+            if u_pos:
+                all_starts.append(u_pos[0])
+                cursor = u_pos[1]
+            epi_raw = []
+            for e in u.get("epigrafes") or []:
+                title = (e.get("titulo") or "").strip()
+                if not title:
+                    continue
+                pos = _find_verbatim(text, title, cursor)
+                if pos is None:
+                    # The model proposed a heading that isn't actually in the
+                    # text (or copied it inexactly) — drop it, don't invent
+                    # content for it.
+                    continue
+                all_starts.append(pos[0])
+                cursor = pos[1]
+                epi_raw.append({"titulo": title, "start": pos[0], "end": pos[1]})
+            if epi_raw:
+                unidades_out.append({"unidad": u.get("unidad"), "nombre": u_name or f"Unit {u.get('unidad')}", "_raw": epi_raw})
+        if unidades_out:
+            modulos_out.append({"modulo": m.get("modulo") or "", "nombre": m_name, "unidades": unidades_out})
+
+    all_starts.sort()
+
+    def _next_boundary_after(pos: int) -> int:
+        for p in all_starts:
+            if p > pos:
+                return p
+        return len(text)
+
+    final_modulos = []
+    for m in modulos_out:
+        unidades_final = []
+        for u in m["unidades"]:
+            epigrafes_final = []
+            for i, e in enumerate(u["_raw"]):
+                content_end = _next_boundary_after(e["start"])
+                texto = _strip_generic_noise(text[e["end"]:content_end], running_header)
+                epigrafes_final.append({"codigo": f"{u['unidad']}.{i + 1}", "titulo": e["titulo"], "texto": texto})
+            unidades_final.append({"unidad": u["unidad"], "nombre": u["nombre"], "epigrafes": epigrafes_final})
+        final_modulos.append({"modulo": m["modulo"], "nombre": m["nombre"], "unidades": unidades_final})
+
+    total_epigrafes = sum(len(u["epigrafes"]) for m in final_modulos for u in m["unidades"])
+    if total_epigrafes == 0:
+        raise ParserError(
+            "Generic structure detection proposed a hierarchy, but none of its épigrafe "
+            "headings could be found verbatim in the actual text — nothing to generate "
+            "decks from."
+        )
+
+    certificado = structure.get("certificado") or (
+        f"{final_modulos[0]['modulo']} — {final_modulos[0]['nombre']}".strip(" —")
+        if final_modulos else ""
+    )
+    return {"certificado": certificado, "modulos": final_modulos}
+
+
+def parse_document(pdf_bytes: bytes) -> dict:
+    """Tries the free/deterministic EDUCALLM-shaped regex parser first;
+    if the document doesn't match that exact structure, falls back to
+    LLM-identified generic structure detection (see module docstring)."""
+    text = _pdf_to_text(pdf_bytes)
+    try:
+        return _parse_educallm_format(text)
+    except ParserError as educallm_err:
+        try:
+            return _parse_generic_via_llm(text)
+        except ParserError as generic_err:
+            raise ParserError(
+                f"Doesn't match the known EDUCALLM format ({educallm_err}), and generic "
+                f"structure detection also failed: {generic_err}"
+            ) from generic_err

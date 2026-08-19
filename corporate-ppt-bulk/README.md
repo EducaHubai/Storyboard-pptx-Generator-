@@ -125,10 +125,15 @@ curl -s -X POST "$BASE/jobs/JOB_ID/retry" | jq
 - **Concurrencia**: cada job procesa 2 epígrafes en paralelo (llamada a OpenAI
   + render) para no saturar rate limits ni CPU. Configurable en
   `jobs._run_job(..., max_workers=2)`.
-- **Parser**: está calibrado al formato de exportación de EDUCALLM que
-  hemos visto (TOC + "Teaching unit N" + "N.N Título"). Si un documento futuro
-  cambia de formato, `parse_document` lanza un error explicando qué no
-  encontró, en vez de generar contenido inventado.
+- **Parser de dos niveles**: primero intenta el parser rápido/gratis
+  calibrado al formato EDUCALLM visto hasta ahora ("Módulo formativo" +
+  "Unidad didáctica N" + Índice). Si el PDF no encaja con esa forma exacta
+  (otro layout de EDUCALLM, u otra fuente), cae a detección de estructura
+  vía OpenAI (`OPENAI_STRUCTURE_MODEL`, por defecto `gpt-4.1-mini`): el
+  modelo identifica módulo/unidad/epígrafe, pero el contenido solo se
+  extrae si ese título aparece literal en el texto — si no, se descarta esa
+  sección en vez de inventar contenido. Si ambos intentos fallan, el error
+  final explica por qué falló cada uno.
 - **Reintentos ante rate limit de OpenAI**: un 429 se reintenta hasta 5 veces
   honrando el "try again in Ns" del propio error de OpenAI. Otros fallos
   (timeout, error de render, plan.json inválido tras el reintento) dejan esa
