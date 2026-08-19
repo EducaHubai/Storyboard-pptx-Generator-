@@ -16,9 +16,16 @@
     --teal: #60BFB8;
     --border: #E0E0E0;
     --textSecondary: #666666;
+    --errorText: #C43B3B;
     --gradient: linear-gradient(90deg, #60BFB8 0%, #2E7ABE 25%, #244A80 50%, #963058 75%, #E96A73 100%);
   }
   * { box-sizing: border-box; }
+  *:focus-visible {
+    outline: 2px solid var(--azulMedio); outline-offset: 2px; border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
   body {
     margin: 0; min-height: 100vh; background: #fff; color: var(--negro);
     font-family: 'Lato', 'Calibri', sans-serif;
@@ -51,9 +58,11 @@
   .dropzone.drag { border-color: var(--burdeos); background: rgba(150,48,88,0.04); }
   .dropzone input { display: none; }
   .browse-btn {
-    padding: 10px 24px; border-radius: 6px; background: var(--burdeos); color: #fff;
-    font-family: 'Rubik', sans-serif; font-size: 13px; font-weight: 500; border: none; cursor: pointer;
+    padding: 12px 24px; min-height: 44px; display: inline-flex; align-items: center; border-radius: 6px;
+    background: var(--burdeos); color: #fff; font-family: 'Rubik', sans-serif; font-size: 13px;
+    font-weight: 500; border: none; cursor: pointer; transition: background-color 150ms ease;
   }
+  .browse-btn:hover { background: #7d2748; }
   .spinner {
     width: 30px; height: 30px; border: 2px solid var(--border); border-top-color: var(--burdeos);
     border-radius: 50%; animation: spin 800ms linear infinite;
@@ -63,23 +72,33 @@
   .tree-node { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
   .tree-header {
     display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none;
-    background: #FAFAFA;
+    background: #FAFAFA; transition: background-color 150ms ease; min-height: 44px;
   }
   .tree-header.modulo { background: var(--azulOscuro); color: #fff; }
+  .tree-header.modulo:hover { background: #1d3c68; }
   .tree-header.unidad { background: #F1F1EF; }
-  .tree-header .caret { width: 10px; transition: transform 150ms; font-size: 11px; }
+  .tree-header.unidad:hover { background: #E7E6E2; }
+  .tree-header .caret { width: 10px; transition: transform 150ms ease; font-size: 11px; }
   .tree-header.open .caret { transform: rotate(90deg); }
   .tree-title { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; flex: 1; }
   .tree-count { font-family: 'Lato', sans-serif; font-size: 11px; opacity: 0.75; }
-  .tree-body { display: none; padding: 8px 16px 12px 40px; }
+  .tree-body { display: none; padding: 8px 16px 12px 40px; overflow: hidden; }
   .tree-body.open { display: block; }
-  .epi-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+  .epi-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 13px; min-height: 32px; }
   .epi-row .codigo { color: var(--textSecondary); font-family: 'Lato', sans-serif; font-size: 11px; min-width: 34px; }
+  .tree-header input[type="checkbox"], .epi-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--burdeos); cursor: pointer; flex-shrink: 0; }
+  .tree-header.modulo input[type="checkbox"] { accent-color: #fff; }
+
+  .stepper { display: flex; gap: 6px; margin-bottom: 18px; }
+  .stepper .seg { flex: 1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+  .stepper .seg.done, .stepper .seg.current { background: var(--gradient); }
+  .stepper .seg.current { opacity: 0.5; }
 
   .scope-actions { display: flex; gap: 8px; margin: 20px 0; flex-wrap: wrap; }
   .chip {
     padding: 8px 14px; border-radius: 9999px; border: 1px solid var(--border); background: transparent;
     color: var(--textSecondary); font-family: 'Lato', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease; min-height: 36px;
   }
   .chip:hover { border-color: var(--burdeos); color: var(--burdeos); }
 
@@ -88,43 +107,71 @@
     padding-top: 24px; border-top: 1px solid var(--border);
   }
   .btn-primary {
-    padding: 12px 26px; border-radius: 6px; background: var(--burdeos); color: #fff;
+    padding: 12px 26px; min-height: 44px; border-radius: 6px; background: var(--burdeos); color: #fff;
     font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: none; cursor: pointer;
+    transition: background-color 150ms ease;
   }
-  .btn-primary:disabled { opacity: 0.5; cursor: default; }
+  .btn-primary:hover:not(:disabled) { background: #7d2748; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-secondary {
-    padding: 12px 26px; border-radius: 6px; background: transparent; color: var(--negro);
+    padding: 12px 26px; min-height: 44px; border-radius: 6px; background: transparent; color: var(--negro);
     font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; border: 1px solid var(--border); cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease;
   }
-  .link-btn { background: none; border: none; color: var(--textSecondary); font-size: 13px; cursor: pointer; text-decoration: underline; }
+  .btn-secondary:hover { background: #FAFAFA; border-color: #ccc; }
+  .link-btn {
+    background: none; border: none; color: var(--textSecondary); font-size: 13px; cursor: pointer;
+    text-decoration: underline; padding: 8px; min-height: 44px;
+  }
+  .link-btn:hover { color: var(--negro); }
 
+  .progress-track { width: 100%; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 20px 0 8px; }
+  .progress-fill { height: 100%; background: var(--gradient); border-radius: 4px; transition: width 300ms ease; }
+  .progress-caption { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--textSecondary); margin: 0 0 24px; }
+
+  .task-list { max-height: 520px; overflow-y: auto; padding-right: 4px; }
   .task-row {
     display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px;
     border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; flex-wrap: wrap;
+    transition: border-color 150ms ease;
   }
-  .task-row.error { border-color: rgba(233,106,105,0.4); }
+  .task-row.error { border-color: rgba(196,59,59,0.4); }
   .task-title { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; }
   .task-sub { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--textSecondary); margin-top: 2px; }
-  .task-error { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--rosa); margin-top: 4px; }
+  .task-error { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--errorText); margin-top: 4px; }
   .status-badge {
     font-family: 'Lato', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
     padding: 4px 10px; border-radius: 9999px; flex-shrink: 0;
   }
   .status-pending, .status-running { background: rgba(46,122,190,0.1); color: var(--azulMedio); }
   .status-done { background: rgba(96,191,184,0.15); color: #1f7d76; }
-  .status-error { background: rgba(233,106,105,0.12); color: var(--rosa); }
+  .status-error { background: rgba(196,59,59,0.12); color: var(--errorText); }
 
   .error-banner {
     display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-radius: 6px;
-    background: rgba(233,106,105,0.08); border: 1px solid rgba(233,106,105,0.3); color: var(--rosa);
+    background: rgba(196,59,59,0.08); border: 1px solid rgba(196,59,59,0.3); color: var(--errorText);
     font-size: 13px; margin-bottom: 24px;
   }
-  .error-banner button { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; }
+  .error-banner button {
+    background: none; border: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1;
+    padding: 4px 6px; border-radius: 4px;
+  }
 
   .footer-gradient { height: 4px; width: 100%; background: var(--gradient); position: fixed; bottom: 0; left: 0; }
   a.download-btn {
     display: inline-block; padding: 16px 34px; border-radius: 8px; background: var(--burdeos); color: #fff;
     font-family: 'Rubik', sans-serif; font-size: 15px; font-weight: 500; text-decoration: none;
+    transition: background-color 150ms ease;
+  }
+  a.download-btn:hover { background: #7d2748; }
+
+  @media (max-width: 600px) {
+    header { padding: 16px 20px; }
+    .brand-text { font-size: 12px; }
+    main { padding: 32px 20px 100px; }
+    h1 { font-size: 24px; }
+    .footer-bar { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+    .footer-bar .btn-primary, .footer-bar .btn-secondary { width: 100%; text-align: center; }
   }
 </style>
 </head>
@@ -169,12 +216,31 @@ function render() {
 function renderErrorBanner() {
   const div = document.createElement("div");
   div.className = "error-banner";
+  div.setAttribute("role", "alert");
   div.innerHTML = `<span>⚠ ${escapeHtml(state.error)}</span>`;
   const btn = document.createElement("button");
   btn.textContent = "✕";
+  btn.setAttribute("aria-label", "Dismiss error");
   btn.onclick = () => { state.error = null; render(); };
   div.appendChild(btn);
   return div;
+}
+
+// Segmented stepper shown at the top of each of the 3 steps.
+function renderStepper(stepIndex) {
+  const bar = document.createElement("div");
+  bar.className = "stepper";
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-valuenow", String(stepIndex + 1));
+  bar.setAttribute("aria-valuemin", "1");
+  bar.setAttribute("aria-valuemax", "3");
+  bar.setAttribute("aria-label", `Step ${stepIndex + 1} of 3`);
+  for (let i = 0; i < 3; i++) {
+    const seg = document.createElement("div");
+    seg.className = "seg" + (i < stepIndex ? " done" : i === stepIndex ? " current" : "");
+    bar.appendChild(seg);
+  }
+  return bar;
 }
 
 function escapeHtml(s) {
@@ -192,6 +258,7 @@ function renderUpload() {
     <p class="lead">One unit, or a full course spanning several modules. The app will find every
     unit/épigrafe in it, then let you choose which ones to generate decks for.</p>
   `;
+  wrap.prepend(renderStepper(0));
   const drop = document.createElement("div");
   drop.className = "dropzone";
   if (state.loading) {
@@ -259,6 +326,7 @@ function renderScope() {
     <p class="lead">Found ${totalEpi} épigrafe${totalEpi === 1 ? "" : "s"} across ${state.structure.modulos.length}
     module${state.structure.modulos.length === 1 ? "" : "s"}. Pick which ones to generate a deck for.</p>
   `;
+  wrap.prepend(renderStepper(1));
   const actions = document.createElement("div");
   actions.className = "scope-actions";
   const selectAllBtn = document.createElement("button");
@@ -318,23 +386,31 @@ function renderModuloNode(m) {
 
   const header = document.createElement("div");
   header.className = "tree-header modulo" + (isOpen ? " open" : "");
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("aria-expanded", String(isOpen));
   header.innerHTML = `
-    <span class="caret">▶</span>
-    <input type="checkbox" ${checkedCount === keys.length ? "checked" : ""} ${checkedCount > 0 && checkedCount < keys.length ? "data-indet" : ""} />
+    <span class="caret" aria-hidden="true">▶</span>
+    <input type="checkbox" aria-label="Select all épigrafes in ${escapeHtml(m.nombre)}" ${checkedCount === keys.length ? "checked" : ""} />
     <span class="tree-title">${escapeHtml(m.nombre)} <span style="opacity:0.7;font-weight:400;">(${escapeHtml(m.modulo)})</span></span>
     <span class="tree-count">${checkedCount}/${keys.length}</span>
   `;
   const checkbox = header.querySelector("input");
+  checkbox.indeterminate = checkedCount > 0 && checkedCount < keys.length;
   checkbox.onclick = (e) => {
     e.stopPropagation();
     const on = checkbox.checked;
     keys.forEach((k) => (on ? state.selected.add(k) : state.selected.delete(k)));
     render();
   };
-  header.onclick = (e) => {
-    if (e.target === checkbox) return;
+  const toggleOpen = () => {
     if (isOpen) state.openNodes.delete(`m:${m.modulo}`); else state.openNodes.add(`m:${m.modulo}`);
     render();
+  };
+  header.onclick = (e) => { if (e.target !== checkbox) toggleOpen(); };
+  header.onkeydown = (e) => {
+    if (e.target === checkbox) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOpen(); }
   };
   node.appendChild(header);
 
@@ -355,23 +431,31 @@ function renderUnidadNode(m, u) {
 
   const header = document.createElement("div");
   header.className = "tree-header unidad" + (isOpen ? " open" : "");
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("aria-expanded", String(isOpen));
   header.innerHTML = `
-    <span class="caret">▶</span>
-    <input type="checkbox" ${checkedCount === keys.length ? "checked" : ""} />
+    <span class="caret" aria-hidden="true">▶</span>
+    <input type="checkbox" aria-label="Select all épigrafes in ${escapeHtml(u.nombre)}" ${checkedCount === keys.length ? "checked" : ""} />
     <span class="tree-title">${escapeHtml(u.nombre)}</span>
     <span class="tree-count">${checkedCount}/${keys.length}</span>
   `;
   const checkbox = header.querySelector("input");
+  checkbox.indeterminate = checkedCount > 0 && checkedCount < keys.length;
   checkbox.onclick = (e) => {
     e.stopPropagation();
     const on = checkbox.checked;
     keys.forEach((k) => (on ? state.selected.add(k) : state.selected.delete(k)));
     render();
   };
-  header.onclick = (e) => {
-    if (e.target === checkbox) return;
+  const toggleOpen = () => {
     if (isOpen) state.openNodes.delete(nodeId); else state.openNodes.add(nodeId);
     render();
+  };
+  header.onclick = (e) => { if (e.target !== checkbox) toggleOpen(); };
+  header.onkeydown = (e) => {
+    if (e.target === checkbox) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOpen(); }
   };
   node.appendChild(header);
 
@@ -381,10 +465,13 @@ function renderUnidadNode(m, u) {
     const key = epiKey(m.modulo, u.unidad, e.codigo);
     const row = document.createElement("div");
     row.className = "epi-row";
+    const rowId = `epi-${key.replace(/[^a-zA-Z0-9]/g, "-")}`;
     row.innerHTML = `
-      <input type="checkbox" ${state.selected.has(key) ? "checked" : ""} />
-      <span class="codigo">${escapeHtml(e.codigo)}</span>
-      <span>${escapeHtml(e.titulo)}</span>
+      <input type="checkbox" id="${rowId}" ${state.selected.has(key) ? "checked" : ""} />
+      <label for="${rowId}" style="display:flex; align-items:center; gap:10px; cursor:pointer; flex:1;">
+        <span class="codigo">${escapeHtml(e.codigo)}</span>
+        <span>${escapeHtml(e.titulo)}</span>
+      </label>
     `;
     row.querySelector("input").onclick = () => {
       if (state.selected.has(key)) state.selected.delete(key); else state.selected.add(key);
@@ -426,13 +513,20 @@ function renderProgress() {
   const wrap = document.createElement("div");
   const job = state.job;
   const doneCount = job.tasks.filter((t) => t.status === "done" || t.status === "error").length;
+  const pct = job.tasks.length ? Math.round((doneCount / job.tasks.length) * 100) : 0;
   wrap.innerHTML = `
     <span class="eyebrow">Step 3 of 3 — Generating</span>
     <h1>${doneCount} of ${job.tasks.length} processed</h1>
+    <div class="progress-track" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+      <div class="progress-fill" style="width:${pct}%;"></div>
+    </div>
+    <p class="progress-caption">${pct}% complete</p>
     <p class="lead">This runs 2 at a time in the background — you can leave this open or come back later
     (job id: ${escapeHtml(job.job_id)}).</p>
   `;
+  wrap.prepend(renderStepper(2));
   const list = document.createElement("div");
+  list.className = "task-list";
   list.style.marginTop = "28px";
   for (const t of job.tasks) list.appendChild(renderTaskRow(t));
   wrap.appendChild(list);
@@ -490,6 +584,7 @@ function renderResult() {
   wrap.appendChild(dl);
 
   const list = document.createElement("div");
+  list.className = "task-list";
   for (const t of job.tasks) list.appendChild(renderTaskRow(t));
   wrap.appendChild(list);
 
