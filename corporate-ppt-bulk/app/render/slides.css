@@ -20,7 +20,7 @@
 }
 .slide-canvas .heading {
   position: absolute; left: 72px; top: 108px; width: 1776px;
-  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 52px;
+  font-family: "Roboto", sans-serif; font-weight: 700; font-size: 52px;
   color: #202020; letter-spacing: -0.3px; line-height: 1.2;
 }
 .slide-canvas .card-shadow {
@@ -39,7 +39,7 @@
 .slide-canvas.sec-cierre .bottom-line { bottom: 0; }
 .slide-canvas.sec-titulo .big-title, .slide-canvas.sec-cierre .big-title {
   position: absolute; left: 140px; right: 140px; top: 440px;
-  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 82px;
+  font-family: "Roboto", sans-serif; font-weight: 700; font-size: 82px;
   color: #FFFFFF; text-align: center; line-height: 1.2;
   text-shadow: 0 12px 32px rgba(0,0,0,0.18);
 }
@@ -58,7 +58,7 @@
 .slide-canvas.sec-inicio .badge svg { width: 120px; height: 120px; }
 .slide-canvas.sec-inicio .content { position: absolute; left: 830px; right: 100px; top: 0; height: 1080px; display: flex; flex-direction: column; justify-content: center; }
 .slide-canvas.sec-inicio .kicker { font-family: "Lato", sans-serif; font-weight: 700; font-size: 21px; letter-spacing: 3px; color: #60BFB8; text-transform: uppercase; margin-bottom: 24px; }
-.slide-canvas.sec-inicio .promise { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; }
+.slide-canvas.sec-inicio .promise { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; }
 
 /* —— Resumen : Burdeos recap grid —— */
 .slide-canvas.sec-resumen { background: #963058; }
@@ -68,7 +68,7 @@
 .slide-canvas.sec-resumen .grid.count-3, .slide-canvas.sec-resumen .grid.count-1 { grid-template-rows: 1fr 1fr; }
 .slide-canvas.sec-resumen .r-card { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.14); border-radius: 24px; padding: 44px 48px; display: flex; align-items: center; gap: 36px; }
 .slide-canvas.sec-resumen .r-card .badge { flex: none; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; color: #FFFFFF; }
-.slide-canvas.sec-resumen .r-card p { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 29px; color: #FFFFFF; margin: 0; line-height: 1.35; }
+.slide-canvas.sec-resumen .r-card p { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 29px; color: #FFFFFF; margin: 0; line-height: 1.35; }
 
 /* —— Concepto / Puntos Clave shared chrome —— */
 .slide-canvas.sec-concepto, .slide-canvas.sec-puntos_clave { background: #FFFFFF; }
@@ -79,7 +79,7 @@
 
 /* Variant: numero_hero */
 .v-numero-hero .hero-number {
-  position: absolute; left: -46px; top: 40px; font-family: "Rubik", sans-serif; font-weight: 700; font-size: 620px;
+  position: absolute; left: -46px; top: 40px; font-family: "Roboto", sans-serif; font-weight: 700; font-size: 620px;
   line-height: 1; user-select: none; background: linear-gradient(160deg, var(--accent, #244A80) 0%, #2E7ABE 45%, #60BFB8 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; opacity: 0.16;
 }
@@ -97,7 +97,7 @@
   display: flex; flex-direction: column; justify-content: center;
 }
 .v-tarjeta .main-card .badge { width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; margin-bottom: 32px; }
-.v-tarjeta .main-card .phrase { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 40px; line-height: 1.3; margin: 0 0 20px; }
+.v-tarjeta .main-card .phrase { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 40px; line-height: 1.3; margin: 0 0 20px; }
 .v-tarjeta .main-card .text { font-family: "Lato", sans-serif; font-size: 22px; line-height: 1.55; opacity: 0.92; margin: 0; }
 .v-tarjeta .secondary-col { flex: 1; display: flex; flex-direction: column; gap: 32px; }
 .v-tarjeta .sec-card {
@@ -119,7 +119,7 @@
 .v-mito .col .lbl { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; margin: 0 0 4px; }
 .v-mito .col.myth .lbl { color: #8B8880; }
 .v-mito .col.reality .lbl { color: rgba(255,255,255,0.75); }
-.v-mito .col p.txt { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 24px; margin: 0; line-height: 1.3; }
+.v-mito .col p.txt { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 24px; margin: 0; line-height: 1.3; }
 .v-mito .col.myth p.txt { color: #55524B; }
 .v-mito .col.reality p.txt { color: #FFFFFF; }
 
@@ -129,10 +129,10 @@
 .v-flujo .step .num {
   position: absolute; top: -34px; left: 50%; transform: translateX(-50%); width: 68px; height: 68px; border-radius: 50%;
   background: linear-gradient(135deg, var(--accent, #2E7ABE), #244A80); color: #FFFFFF;
-  font-family: "Rubik", sans-serif; font-weight: 700; font-size: 30px; display: flex; align-items: center; justify-content: center;
+  font-family: "Roboto", sans-serif; font-weight: 700; font-size: 30px; display: flex; align-items: center; justify-content: center;
 }
 .v-flujo .step .badge { color: var(--accent, #2E7ABE); margin: 30px 0 24px; display: flex; justify-content: center; }
-.v-flujo .step h3 { font-family: "Rubik", sans-serif; font-weight: 700; font-size: 27px; color: #202020; margin: 0 0 12px; }
+.v-flujo .step h3 { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 27px; color: #202020; margin: 0 0 12px; }
 .v-flujo .step p { font-family: "Lato", sans-serif; font-size: 20px; color: #555; margin: 0; line-height: 1.4; }
 .v-flujo .arrow { flex: 0 0 60px; display: flex; align-items: center; justify-content: center; color: var(--accent, #2E7ABE); }
 

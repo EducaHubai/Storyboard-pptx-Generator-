@@ -27,7 +27,7 @@ same design system as the .claude/skills/corporate-ppt Claude Skill),
 screenshotted via headless Chromium, then reassembled with titles/captions
 as REAL editable pptx text boxes overlaid on top â only decorative art
 (the giant hero number, card shadows, gradients) is baked into the
-background image. Rubik/Lato are embedded into the .pptx afterward so
+background image. Roboto/Lato are embedded into the .pptx afterward so
 those text boxes render correctly even without the fonts installed.
 """
 import json
@@ -55,8 +55,8 @@ PT_PER_PX = 72.0 / PX_PER_IN       # 0.375
 SCALE = 2                          # device_scale_factor for screenshots
 
 FONTS = [
-    {"typeface": "Rubik", "style": "regular", "file": "Rubik-Regular.ttf"},
-    {"typeface": "Rubik", "style": "bold", "file": "Rubik-Bold.ttf"},
+    {"typeface": "Roboto", "style": "regular", "file": "Roboto-Regular.ttf"},
+    {"typeface": "Roboto", "style": "bold", "file": "Roboto-Bold.ttf"},
     {"typeface": "Lato", "style": "regular", "file": "Lato-Regular.ttf"},
     {"typeface": "Lato", "style": "bold", "file": "Lato-Bold.ttf"},
 ]
@@ -115,8 +115,8 @@ def build_html(slide):
     fonts_dir = os.path.abspath(FONTS_DIR)
     slides_css = open(os.path.join(HERE, "slides.css"), encoding="utf-8").read()
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-  @font-face {{ font-family:"Rubik"; src:url("file://{fonts_dir}/Rubik-Regular.ttf") format("truetype"); font-weight:400; }}
-  @font-face {{ font-family:"Rubik"; src:url("file://{fonts_dir}/Rubik-Bold.ttf") format("truetype"); font-weight:700; }}
+  @font-face {{ font-family:"Roboto"; src:url("file://{fonts_dir}/Roboto-Regular.ttf") format("truetype"); font-weight:400; }}
+  @font-face {{ font-family:"Roboto"; src:url("file://{fonts_dir}/Roboto-Bold.ttf") format("truetype"); font-weight:700; }}
   @font-face {{ font-family:"Lato"; src:url("file://{fonts_dir}/Lato-Regular.ttf") format("truetype"); font-weight:400; }}
   @font-face {{ font-family:"Lato"; src:url("file://{fonts_dir}/Lato-Bold.ttf") format("truetype"); font-weight:700; }}
   {slides_css}
@@ -198,7 +198,7 @@ def assemble_pptx(plan, scripts_by_n, tmp_dir, out_path):
 
 
 def embed_fonts(pptx_path):
-    """Embed Rubik/Lato into the .pptx so editable text boxes render
+    """Embed Roboto/Lato into the .pptx so editable text boxes render
     correctly even without those fonts installed locally (same technique
     as index.js's embedFonts(), ported to Python/zipfile)."""
     font_bufs = [{**f, "buffer": open(os.path.join(FONTS_DIR, f["file"]), "rb").read()} for f in FONTS]
