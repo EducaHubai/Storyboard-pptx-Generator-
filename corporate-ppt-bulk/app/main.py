@@ -13,7 +13,9 @@ boundary (see README).
 """
 from __future__ import annotations
 
+import io
 import os
+import zipfile
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -25,6 +27,45 @@ import jobs
 app = FastAPI(title="corporate-ppt-bulk")
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+_PDF_CONTENT_TYPES = ("application/pdf", "application/x-pdf")
+_ZIP_CONTENT_TYPES = ("application/zip", "application/x-zip-compressed", "application/x-zip")
+# Guard against zip bombs — total *decompressed* PDF bytes per uploaded zip.
+_MAX_ZIP_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+
+
+def _extract_pdfs_from_zip(zip_filename: str, raw: bytes) -> list[tuple[str, bytes]]:
+    """Pulls every .pdf entry out of an uploaded zip, skipping directories
+    and macOS junk (__MACOSX/, ._* resource forks). Labels each extracted
+    PDF as "zipname:path/inside.pdf" so error messages and duplicate-module
+    detection stay traceable to where it came from."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(400, f"'{zip_filename}' isn't a valid zip file")
+
+    pdfs: list[tuple[str, bytes]] = []
+    total_uncompressed = 0
+    with zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename
+            base = os.path.basename(name)
+            if not base.lower().endswith(".pdf"):
+                continue
+            if "__MACOSX" in name or base.startswith("."):
+                continue
+            total_uncompressed += info.file_size
+            if total_uncompressed > _MAX_ZIP_UNCOMPRESSED_BYTES:
+                raise HTTPException(
+                    400, f"'{zip_filename}' is too large once decompressed (PDFs exceed 200MB total)"
+                )
+            pdfs.append((f"{zip_filename}:{name}", zf.read(info)))
+
+    if not pdfs:
+        raise HTTPException(400, f"'{zip_filename}' doesn't contain any PDFs")
+    return pdfs
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -44,17 +85,24 @@ def health():
 
 @app.post("/documents")
 async def upload_document(files: list[UploadFile] = File(...)):
-    """Accepts one or more PDFs — a single unit/course document, or several
+    """Accepts one or more PDFs — a single unit/course document, several
     PDFs that together make up one course/acción formativa (one per módulo,
-    typically). All are parsed and merged into a single doc_id/structure so
-    scope selection and bulk generation span all of them at once."""
+    typically), or a zip bundling them (nested folders are fine — every
+    .pdf entry inside is pulled out). All are parsed and merged into a
+    single doc_id/structure so scope selection and bulk generation span
+    all of them at once."""
     if not files:
         raise HTTPException(400, "No files uploaded")
-    pdfs = []
+    pdfs: list[tuple[str, bytes]] = []
     for f in files:
-        if f.content_type not in ("application/pdf", "application/x-pdf") and not f.filename.lower().endswith(".pdf"):
-            raise HTTPException(400, f"Expected a PDF file, got '{f.filename}'")
-        pdfs.append((f.filename, await f.read()))
+        raw = await f.read()
+        name_lower = f.filename.lower()
+        if name_lower.endswith(".zip") or f.content_type in _ZIP_CONTENT_TYPES:
+            pdfs.extend(_extract_pdfs_from_zip(f.filename, raw))
+        elif name_lower.endswith(".pdf") or f.content_type in _PDF_CONTENT_TYPES:
+            pdfs.append((f.filename, raw))
+        else:
+            raise HTTPException(400, f"Expected a PDF or zip file, got '{f.filename}'")
     try:
         doc_id, structure = jobs.create_document(pdfs)
     except jobs.pdf_parser.ParserError as e:

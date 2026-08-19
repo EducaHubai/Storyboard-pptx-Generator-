@@ -278,9 +278,9 @@ function renderUpload() {
   wrap.innerHTML = `
     <span class="eyebrow">Step 1 of 3</span>
     <h1>Upload the training document${state.stagedFiles.length > 1 ? "s" : ""}</h1>
-    <p class="lead">One unit, or a full course spanning several modules — as one PDF, or several PDFs from the
-    same block (e.g. one per module). The app will find every unit/épigrafe across all of them, then let you
-    choose which ones to generate decks for.${multiHint}</p>
+    <p class="lead">One unit, or a full course spanning several modules — as one PDF, several PDFs from the
+    same block (e.g. one per module), or a single zip bundling them all. The app will find every unit/épigrafe
+    across all of them, then let you choose which ones to generate decks for.${multiHint}</p>
   `;
   wrap.prepend(renderStepper(0));
   const drop = document.createElement("div");
@@ -293,10 +293,10 @@ function renderUpload() {
         <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <p style="font-family:'Rubik',sans-serif;font-size:15px;font-weight:500;margin:0;">Drag and drop your PDF(s) here</p>
+      <p style="font-family:'Rubik',sans-serif;font-size:15px;font-weight:500;margin:0;">Drag and drop your PDF(s) or a .zip here</p>
       <p style="font-family:'Lato',sans-serif;font-size:13px;color:#666;margin:0;">or</p>
-      <label class="browse-btn">Browse files<input type="file" accept="application/pdf" multiple id="file-input" /></label>
-      <p style="font-family:'Lato',sans-serif;font-size:12px;color:#666;margin-top:8px;">PDF only — select or drop more than one if they're from the same block</p>
+      <label class="browse-btn">Browse files<input type="file" accept="application/pdf,.pdf,.zip,application/zip,application/x-zip-compressed" multiple id="file-input" /></label>
+      <p style="font-family:'Lato',sans-serif;font-size:12px;color:#666;margin-top:8px;">PDF or zip — select/drop more than one if they're from the same block</p>
     `;
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("drag"); };
     drop.ondragleave = () => drop.classList.remove("drag");
@@ -317,7 +317,8 @@ function renderUpload() {
     state.stagedFiles.forEach((file, i) => {
       const row = document.createElement("div");
       row.className = "staged-file";
-      row.innerHTML = `<span class="name">📄 ${escapeHtml(file.name)}</span>`;
+      const icon = file.name.toLowerCase().endsWith(".zip") ? "🗂" : "📄";
+      row.innerHTML = `<span class="name">${icon} ${escapeHtml(file.name)}</span>`;
       const removeBtn = document.createElement("button");
       removeBtn.className = "remove";
       removeBtn.textContent = "✕";
@@ -348,10 +349,17 @@ function renderUpload() {
   return wrap;
 }
 
+function isPdfOrZip(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf") || file.type === "application/pdf") return true;
+  if (name.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed") return true;
+  return false;
+}
+
 function addStagedFiles(fileList) {
   const existingNames = new Set(state.stagedFiles.map((f) => f.name + f.size));
   for (const file of fileList) {
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) continue;
+    if (!isPdfOrZip(file)) continue;
     const key = file.name + file.size;
     if (existingNames.has(key)) continue; // skip exact re-adds (same drop fired twice, etc.)
     state.stagedFiles.push(file);

@@ -65,11 +65,14 @@ BASE="https://tu-servicio.coolify.app"
 # 1. Subir el/los PDF(s) y ver la estructura real detectada.
 #    Uno o varios — si son varios, se tratan como una misma acción formativa
 #    (p. ej. un PDF por módulo) y se combinan en un único doc_id/structure.
+#    También acepta un .zip con varios PDFs dentro (carpetas anidadas ok).
 curl -s -X POST "$BASE/documents" \
   -F "files=@Certificate_in_eLearning_Production.pdf" | jq
 
 curl -s -X POST "$BASE/documents" \
   -F "files=@Modulo1.pdf" -F "files=@Modulo2.pdf" -F "files=@Modulo3.pdf" | jq
+
+curl -s -X POST "$BASE/documents" -F "files=@modulos.zip" | jq
 
 # devuelve: {"doc_id": "...", "structure": {"certificado": "...", "modulos": [...]}}
 
