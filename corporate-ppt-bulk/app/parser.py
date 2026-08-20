@@ -342,7 +342,16 @@ _STRUCTURE_SCHEMA = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "modulo": {"type": "string", "description": "Module code, e.g. 'C04-01'."},
+                    "modulo": {
+                        "type": "string",
+                        "description": (
+                            "A short code that uniquely identifies THIS module, e.g. 'C04-01'. "
+                            "Never a generic template label like 'Training module' or 'Module 1' — "
+                            "other documents in the same series carry that exact same label, so it "
+                            "can't tell them apart. If no real code is visible in the source, derive "
+                            "one from this module's own distinctive title instead."
+                        ),
+                    },
                     "nombre": {
                         "type": "string",
                         "description": (
@@ -405,6 +414,12 @@ Rules:
 - If you can't identify any reliable módulo/unidad/épigrafe structure at
   all, return an empty modulos list — don't force a structure onto text
   that doesn't have one.
+- `modulo` must genuinely distinguish this document from others in the
+  same series — never a generic template label (e.g. "Training module",
+  "Module 1") that would appear identically on a different module's
+  cover page. If the source doesn't show a real short code, derive one
+  from this module's own title instead of falling back to the generic
+  label.
 - If a header or footer line repeats near-identically across most pages
   (e.g. a running module title, or a page number), copy ONE exact
   instance of it into running_header so it can be stripped from content

@@ -70,26 +70,41 @@ def _clean_filename(s: str) -> str:
 
 
 # ── Documents ────────────────────────────────────────────────
-def _merge_structures(structures: list[dict]) -> dict:
+def _merge_structures(named_structures: list[tuple[str, dict]]) -> dict:
     """Concatenates several PDFs' módulos into one combined structure, for
     the case where a course/acción formativa is split across one PDF per
-    módulo. Raises ParserError if two uploaded PDFs claim the same módulo
-    code — that's either a duplicate upload or two modules that collide,
-    and either way resolve_selection() can't tell them apart by code."""
+    módulo. `named_structures` is a list of (filename, structure).
+
+    If two módulos end up with the same código:
+      - same source filename claiming it twice → a genuine accidental
+        duplicate upload (or the parser found the same module twice
+        within one file) → rejected.
+      - different filenames, same código → not the user's fault; it
+        means parse_document (particularly the generic LLM-based
+        fallback for non-EDUCALLM-shaped PDFs) couldn't find a real
+        per-module code and fell back to something generic like
+        "Training module" that every file in the series shares. Rather
+        than blocking an otherwise legitimate multi-file upload,
+        disambiguate by suffixing a filename-derived slug."""
     modulos: list[dict] = []
-    seen_codes: set[str] = set()
+    seen: dict[str, str] = {}  # código -> filename that first claimed it
     certificado = ""
-    for s in structures:
+    for filename, s in named_structures:
         if not certificado:
             certificado = s.get("certificado", "")
         for m in s["modulos"]:
-            if m["modulo"] in seen_codes:
-                raise pdf_parser.ParserError(
-                    f"Module code '{m['modulo']}' appears in more than one uploaded PDF — "
-                    "check you didn't upload the same module twice, or that two different "
-                    "modules don't share a code."
-                )
-            seen_codes.add(m["modulo"])
+            codigo = m["modulo"]
+            if codigo in seen:
+                if seen[codigo] == filename:
+                    raise pdf_parser.ParserError(
+                        f"'{filename}' produced module code '{codigo}' more than once — "
+                        "check it wasn't uploaded twice, or that it doesn't contain two "
+                        "modules sharing the same code."
+                    )
+                slug = _clean_filename(os.path.splitext(os.path.basename(filename))[0])[:24]
+                codigo = f"{codigo}-{slug}"
+                m["modulo"] = codigo
+            seen[codigo] = filename
             modulos.append(m)
     return {"certificado": certificado, "modulos": modulos}
 
@@ -103,7 +118,7 @@ def create_document(pdfs: list[tuple[str, bytes]]) -> tuple[str, dict]:
     structures = []
     for filename, pdf_bytes in pdfs:
         try:
-            structures.append(pdf_parser.parse_document(pdf_bytes))
+            structures.append((filename, pdf_parser.parse_document(pdf_bytes)))
         except pdf_parser.ParserError as e:
             raise pdf_parser.ParserError(f"{filename}: {e}") from e
     structure = _merge_structures(structures)
