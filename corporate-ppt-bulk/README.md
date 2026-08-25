@@ -115,7 +115,20 @@ curl -s "$BASE/jobs/JOB_ID/download" -o decks.zip
 # 5. Si algo falló o quedó "skipped" (uno de N, o el único epígrafe de un job
 #    de 1), reintenta solo eso — no hace falta volver a subir el PDF ni
 #    reelegir scope. Los que ya salieron bien se quedan tal cual en el zip.
+#    Sin body: reintenta TODO lo fallido/skipped. Con "tasks": reintenta
+#    solo los epígrafes listados (deben estar en error/skipped) — el botón
+#    "↻ Retry" de cada fila en la UI usa esta forma para ir uno por uno.
 curl -s -X POST "$BASE/jobs/JOB_ID/retry" | jq
+
+curl -s -X POST "$BASE/jobs/JOB_ID/retry" -H "Content-Type: application/json" -d '{
+  "tasks": [{"modulo": "B1-01", "unidad": 1, "codigo": "1.2"}]
+}' | jq
+
+# 6. Historial: todos los jobs que este proceso conoce, más recientes primero
+#    (botón "History" en la UI). Solo cubre jobs desde el último reinicio,
+#    más cualquier job grande (>50 epígrafes) recuperado tras un crash — un
+#    job pequeño de antes de un reinicio no queda registrado.
+curl -s "$BASE/jobs" | jq
 ```
 
 ## Límites conocidos (v1)

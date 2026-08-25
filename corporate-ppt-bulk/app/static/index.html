@@ -42,6 +42,32 @@
     font-weight: 500; font-size: 11px;
   }
   .brand-text { font-family: 'Rubik', sans-serif; font-size: 14px; font-weight: 500; }
+  .history-nav-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px; padding: 8px 16px;
+    font-family: 'Rubik', sans-serif; font-size: 13px; font-weight: 500; color: var(--negro);
+    cursor: pointer; min-height: 36px; transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .history-nav-btn:hover { border-color: var(--burdeos); background: rgba(150,48,88,0.04); }
+
+  .history-list { margin-top: 24px; }
+  .history-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px;
+    border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .history-card .info { min-width: 0; flex: 1; }
+  .history-card .date { font-family: 'Lato', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--textSecondary); margin-bottom: 4px; }
+  .history-card .name { font-family: 'Rubik', sans-serif; font-size: 15px; font-weight: 500; margin-bottom: 4px; overflow-wrap: break-word; }
+  .history-card .summary { font-family: 'Lato', sans-serif; font-size: 12px; color: var(--textSecondary); }
+  .history-card .actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .history-empty { text-align: center; padding: 60px 20px; color: var(--textSecondary); font-family: 'Lato', sans-serif; }
+  .history-retry-btn { padding: 8px 14px; min-height: 36px; font-size: 13px; }
+  .task-retry-btn {
+    background: none; border: 1px solid var(--errorText); border-radius: 6px; color: var(--errorText);
+    font-family: 'Rubik', sans-serif; font-size: 12px; font-weight: 500; padding: 6px 10px; min-height: 32px;
+    cursor: pointer; transition: background-color 150ms ease; flex-shrink: 0;
+  }
+  .task-retry-btn:hover:not(:disabled) { background: rgba(196,59,59,0.06); }
+  .task-retry-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   main { max-width: 900px; margin: 0 auto; padding: 56px 32px 100px; }
   .eyebrow {
     display: block; font-family: 'Lato', sans-serif; font-size: 11px; font-weight: 700;
@@ -208,6 +234,7 @@
       <span class="brand-mark">EE</span>
       <span class="brand-text">EDUCA EDTECH Group — Corporate PPT Bulk</span>
     </div>
+    <button class="history-nav-btn" id="history-nav-btn">History</button>
     <div class="gradient-bar"></div>
   </header>
   <main id="app"></main>
@@ -216,7 +243,7 @@
 <script>
 const API_BASE = "";
 const state = {
-  screen: "upload",   // upload | scope | progress | result
+  screen: "upload",   // upload | scope | progress | result | history
   loading: false,
   error: null,
   stagedFiles: [], // File[] staged on the upload screen before parsing
@@ -227,6 +254,8 @@ const state = {
   jobId: null,
   job: null,
   pollTimer: null,
+  historyJobs: null,   // null = not loaded yet; [] once fetched (possibly empty)
+  screenBeforeHistory: "upload", // where "← Back" on the history screen returns to
 };
 
 function epiKey(modulo, unidad, codigo) { return `${modulo}||${unidad}||${codigo}`; }
@@ -239,6 +268,7 @@ function render() {
   else if (state.screen === "scope") app.appendChild(renderScope());
   else if (state.screen === "progress") app.appendChild(renderProgress());
   else if (state.screen === "result") app.appendChild(renderResult());
+  else if (state.screen === "history") app.appendChild(renderHistory());
 }
 
 function renderErrorBanner() {
@@ -658,7 +688,8 @@ async function stopJob() {
   }
 }
 
-function renderTaskRow(t) {
+function renderTaskRow(t, opts) {
+  const allowRetry = !!(opts && opts.allowRetry);
   const row = document.createElement("div");
   row.className = "task-row" + (t.status === "error" ? " error" : "");
   row.innerHTML = `
@@ -668,17 +699,59 @@ function renderTaskRow(t) {
       ${t.error ? `<div class="task-error">⚠ ${escapeHtml(t.error)}</div>` : ""}
       ${t.contentWarning ? `<div class="task-sub" style="font-style:italic;">ⓘ ${escapeHtml(t.contentWarning)}</div>` : ""}
     </div>
-    <span class="status-badge status-${t.status}">${t.status}</span>
   `;
+  const right = document.createElement("div");
+  right.style.display = "flex"; right.style.alignItems = "center"; right.style.gap = "10px"; right.style.flexShrink = "0";
+  const badge = document.createElement("span");
+  badge.className = `status-badge status-${t.status}`;
+  badge.textContent = t.status;
+  right.appendChild(badge);
+  if (allowRetry && (t.status === "error" || t.status === "skipped")) {
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "task-retry-btn";
+    retryBtn.disabled = state.loading;
+    retryBtn.textContent = "↻ Retry";
+    retryBtn.setAttribute("aria-label", `Retry ${t.codigo} — ${t.titulo}`);
+    retryBtn.onclick = () => retryOneTask(t);
+    right.appendChild(retryBtn);
+  }
+  row.appendChild(right);
   return row;
 }
 
-async function retryFailed() {
+async function retryOneTask(t) {
+  // Retries exactly this one épigrafe, not the whole failed/skipped set —
+  // the "go one for one" option next to the bulk "Retry N failed" button.
   state.loading = true; state.error = null; render();
   try {
-    const res = await fetch(`${API_BASE}/jobs/${state.jobId}/retry`, { method: "POST" });
+    const res = await fetch(`${API_BASE}/jobs/${state.jobId}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: [{ modulo: t.modulo, unidad: t.unidad, codigo: t.codigo }] }),
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.job = data;
+    state.screen = "progress";
+    pollJob();
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
+}
+
+async function retryFailed(jobId) {
+  // Called with no args from the Result screen (retries the job already
+  // in state.jobId); called with an explicit jobId from the History
+  // screen (retries a past job without first navigating into it).
+  jobId = jobId || state.jobId;
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/retry`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.jobId = jobId;
     state.job = data;
     state.screen = "progress";
     pollJob();
@@ -737,7 +810,7 @@ function renderResult() {
     retryBtn.className = "btn-retry";
     retryBtn.disabled = state.loading;
     retryBtn.textContent = state.loading ? "Retrying…" : `↻ Retry ${failed.length} incomplete`;
-    retryBtn.onclick = retryFailed;
+    retryBtn.onclick = () => retryFailed();
     actionsRow.appendChild(retryBtn);
   }
   if (successCount === 0) {
@@ -751,7 +824,7 @@ function renderResult() {
 
   const list = document.createElement("div");
   list.className = "task-list";
-  for (const t of job.tasks) list.appendChild(renderTaskRow(t));
+  for (const t of job.tasks) list.appendChild(renderTaskRow(t, { allowRetry: true }));
   wrap.appendChild(list);
 
   const footer = document.createElement("div");
@@ -770,6 +843,127 @@ function renderResult() {
   wrap.appendChild(footer);
   return wrap;
 }
+
+// ── Screen 5: History ────────────────────────────────────────
+async function openHistory() {
+  if (state.screen !== "history") state.screenBeforeHistory = state.screen;
+  state.screen = "history";
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.historyJobs = data.jobs;
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+    state.historyJobs = state.historyJobs || [];
+  } finally {
+    state.loading = false; render();
+  }
+}
+
+function formatHistoryDate(unixSeconds) {
+  if (!unixSeconds) return "";
+  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function renderHistory() {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+    <span class="eyebrow">History</span>
+    <h1>Past jobs</h1>
+    <p class="lead">Every generation this server has run since it last restarted, plus any large
+    (50+ épigrafe) job recovered after a crash. Smaller jobs from before a restart aren't kept.</p>
+  `;
+  const backBtn = document.createElement("button");
+  backBtn.className = "link-btn"; backBtn.textContent = "← Back";
+  backBtn.style.display = "block"; backBtn.style.marginTop = "4px";
+  backBtn.onclick = () => { state.screen = state.screenBeforeHistory; render(); };
+  wrap.appendChild(backBtn);
+
+  if (state.loading) {
+    const loading = document.createElement("div");
+    loading.style.textAlign = "center"; loading.style.padding = "60px 20px";
+    loading.innerHTML = `<div class="spinner" style="margin: 0 auto;"></div>`;
+    wrap.appendChild(loading);
+    return wrap;
+  }
+
+  const jobsList = state.historyJobs || [];
+  if (jobsList.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "No jobs yet.";
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const list = document.createElement("div");
+  list.className = "history-list";
+  for (const j of jobsList) list.appendChild(renderHistoryCard(j));
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function renderHistoryCard(j) {
+  const card = document.createElement("div");
+  card.className = "history-card";
+  const parts = [`${j.done}/${j.total} done`];
+  if (j.error > 0) parts.push(`${j.error} failed`);
+  if (j.skipped > 0) parts.push(`${j.skipped} skipped`);
+  const statusLine = (j.status === "running" ? "Running… · " : "") + parts.join(" · ") + (j.cancelled ? " · stopped early" : "");
+  card.innerHTML = `
+    <div class="info">
+      <div class="date">${escapeHtml(formatHistoryDate(j.created_at))}</div>
+      <div class="name">${escapeHtml(j.certificado || "Untitled")}</div>
+      <div class="summary">${escapeHtml(statusLine)}</div>
+    </div>
+  `;
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const viewBtn = document.createElement("button");
+  viewBtn.className = "chip"; viewBtn.textContent = "View";
+  viewBtn.onclick = () => openHistoryJob(j.job_id);
+  actions.appendChild(viewBtn);
+  if (j.download_ready) {
+    const dl = document.createElement("a");
+    dl.className = "chip"; dl.style.textDecoration = "none";
+    dl.href = `${API_BASE}/jobs/${j.job_id}/download`;
+    dl.textContent = "⬇ Download";
+    actions.appendChild(dl);
+  }
+  if (j.status === "done" && j.error + j.skipped > 0) {
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "btn-retry history-retry-btn";
+    retryBtn.disabled = state.loading;
+    retryBtn.textContent = `↻ Retry ${j.error + j.skipped}`;
+    retryBtn.onclick = () => retryFailed(j.job_id);
+    actions.appendChild(retryBtn);
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+async function openHistoryJob(jobId) {
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.jobId = jobId;
+    state.job = data;
+    state.screen = data.status === "running" ? "progress" : "result";
+    if (data.status === "running") pollJob();
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
+}
+
+document.getElementById("history-nav-btn").onclick = openHistory;
 
 render();
 </script>

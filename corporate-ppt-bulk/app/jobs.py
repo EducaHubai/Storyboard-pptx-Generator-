@@ -332,6 +332,16 @@ def get_job(job_id: str) -> dict | None:
     return JOBS.get(job_id)
 
 
+def list_jobs() -> list[dict]:
+    """Every job this process knows about, newest first — in-memory jobs
+    created since the last restart, plus any autosave-tier job
+    load_persisted_jobs() recovered from disk at startup. A small
+    (non-autosave) job from before a restart is gone, same as the rest
+    of this process's in-memory state — there's no persisted history for
+    those."""
+    return sorted(JOBS.values(), key=lambda j: j.get("created_at") or 0, reverse=True)
+
+
 def get_job_zip_path(job_id: str) -> str | None:
     job = JOBS.get(job_id)
     if job and job["download_ready"]:
@@ -386,21 +396,43 @@ def cancel_job(job_id: str) -> dict:
     return job
 
 
-def retry_failed(job_id: str) -> dict:
-    """Re-runs only this job's failed/skipped tasks — reuses the job's
+def _task_key(t: dict) -> tuple:
+    return (t["modulo"], t["unidad"], t["codigo"])
+
+
+def retry_failed(job_id: str, task_refs: list[dict] | None = None) -> dict:
+    """Re-runs this job's failed/skipped tasks — reuses the job's
     original language/model already in memory (or reloaded from disk
     after a crash), so the caller never has to re-upload the PDF(s) or
     reselect scope just because one épigrafe (out of one, or one out of
     many) hit a transient failure, got skipped by a stop, or was
     interrupted by a restart. Newly-succeeded decks are appended to the
     existing zip rather than rebuilding it from scratch (small jobs) or
-    written straight to disk and re-zipped (autosave-tier jobs)."""
+    written straight to disk and re-zipped (autosave-tier jobs).
+
+    `task_refs`, if given, is a list of {"modulo", "unidad", "codigo"}
+    identifying exactly which failed/skipped tasks to retry (the "redo
+    just this one" case) — omit it (or pass an empty list) to retry
+    every failed/skipped task in the job, same as before."""
     job = JOBS.get(job_id)
     if job is None:
         raise KeyError(job_id)
     if job["status"] == "running":
         raise ValueError("Job is still running — wait for it to finish before retrying")
-    failed = [t for t in job["tasks"] if t["status"] in ("error", "skipped")]
+
+    if task_refs:
+        wanted = {(r["modulo"], r["unidad"], r["codigo"]) for r in task_refs}
+        by_key = {_task_key(t): t for t in job["tasks"]}
+        missing = wanted - by_key.keys()
+        if missing:
+            raise ValueError(f"Task(s) not found in this job: {sorted(missing)}")
+        failed = [by_key[k] for k in wanted]
+        not_retryable = [t for t in failed if t["status"] not in ("error", "skipped")]
+        if not_retryable:
+            t = not_retryable[0]
+            raise ValueError(f"Épigrafe {t['codigo']} isn't failed/skipped (currently '{t['status']}')")
+    else:
+        failed = [t for t in job["tasks"] if t["status"] in ("error", "skipped")]
     if not failed:
         raise ValueError("No failed tasks to retry")
 

@@ -3,6 +3,7 @@
     GET  /                     — single-page UI (static/index.html)
     POST /documents          — upload PDF, parse, return {doc_id, structure}
     POST /jobs                — start a background generation job for a scope
+    GET  /jobs                — job history (summaries, newest first)
     GET  /jobs/{job_id}       — poll status (per-épigrafe progress/errors, ETA)
     POST /jobs/{job_id}/cancel — stop starting any more not-yet-started épigrafes
     POST /jobs/{job_id}/retry — re-run only this job's failed/skipped épigrafes
@@ -136,6 +137,32 @@ class JobRequest(BaseModel):
     model: Optional[str] = None
 
 
+@app.get("/jobs")
+def list_jobs():
+    """Job history: every job this process knows about, newest first —
+    in-memory jobs from since the last restart, plus any autosave-tier
+    job recovered from disk at startup. See jobs.list_jobs()'s docstring
+    for what's NOT covered (a small job from before a restart)."""
+    return {"jobs": [_job_summary(j) for j in jobs.list_jobs()]}
+
+
+def _job_summary(job: dict) -> dict:
+    counts = {"done": 0, "error": 0, "skipped": 0, "pending": 0, "running": 0}
+    for t in job["tasks"]:
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    certificado = job["tasks"][0].get("certificado", "") if job["tasks"] else ""
+    return {
+        "job_id": job["job_id"],
+        "created_at": job.get("created_at"),
+        "certificado": certificado,
+        "status": job["status"],
+        "download_ready": job["download_ready"],
+        "cancelled": job.get("cancelled", False),
+        "total": len(job["tasks"]),
+        **counts,
+    }
+
+
 @app.post("/jobs")
 async def create_job(req: JobRequest):
     try:
@@ -197,14 +224,26 @@ async def cancel_job(job_id: str):
     return _job_view(job)
 
 
+class TaskRef(BaseModel):
+    modulo: str
+    unidad: int
+    codigo: str
+
+
+class RetryRequest(BaseModel):
+    tasks: Optional[list[TaskRef]] = None
+
+
 @app.post("/jobs/{job_id}/retry")
-async def retry_job(job_id: str):
-    """Re-runs just this job's failed or skipped (stopped) tasks — whether
-    that's the one épigrafe in a single-item job, or a handful out of a
-    larger batch — without re-uploading the PDF(s) or reselecting scope.
-    Succeeded tasks are left untouched and their decks stay in the zip."""
+async def retry_job(job_id: str, req: RetryRequest = RetryRequest()):
+    """Re-runs this job's failed or skipped (stopped) tasks — whether
+    that's the one épigrafe in a single-item job, a handful out of a
+    larger batch, or (if `tasks` is given) exactly the ones named —
+    without re-uploading the PDF(s) or reselecting scope. Succeeded
+    tasks are left untouched and their decks stay in the zip."""
+    task_refs = [t.model_dump() for t in req.tasks] if req.tasks else None
     try:
-        job = jobs.retry_failed(job_id)
+        job = jobs.retry_failed(job_id, task_refs)
     except KeyError:
         raise HTTPException(404, "Unknown job_id")
     except ValueError as e:
