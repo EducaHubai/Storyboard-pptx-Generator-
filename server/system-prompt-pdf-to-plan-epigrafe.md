@@ -22,10 +22,17 @@ with one entry. List units and epígrafes in document order, using their real
 titles as they appear in the source. Do not generate any slide plan in this
 mode.
 
+Never list a glosario/glossary or taller/workshop section as an epígrafe —
+these aren't real training content, leave them out of the list entirely
+even if they appear as their own heading in the source.
+
 **Mode B — a target epígrafe is given.** Extract ONLY that epígrafe's real
 content from the document (ignore the others, including other units) and
 produce the full slide plan JSON described below. Never invent content —
 everything must come from what this epígrafe actually says in the source.
+If the named target is itself a glosario/glossary or taller/workshop
+section, refuse to build a deck for it and say why instead of returning
+JSON.
 
 ## Rules (Mode B)
 

@@ -52,6 +52,13 @@ _MODULE_CODE_LINE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9\-]*)\s*·\s*(.+)$")
 # "1. U1 What is AI? History, types, and key concepts"
 _TOC_UNIT_RE = re.compile(r"^(\d+)\.\s*U(\d+)\s+(.+)$")
 _PAGE_FOOTER_RE = re.compile(r"^\d+\s*/\s*\d+$")
+# Glosario/taller (workshop) sections aren't real épigrafe content — never
+# generate a deck for one, in either parser path.
+_EXCLUDED_TITLE_RE = re.compile(r"\b(glosario|glossary|taller(?:es)?|workshops?)\b", re.IGNORECASE)
+
+
+def _is_excluded_title(title: str) -> bool:
+    return bool(_EXCLUDED_TITLE_RE.search(title or ""))
 
 
 def _pdf_to_text(pdf_bytes: bytes) -> str:
@@ -138,7 +145,11 @@ def _parse_modules_and_toc(lines: list[str]):
                 toc_by_unit.setdefault(current_toc_unit, [])
                 i += 1
                 continue
-            if stripped and current_toc_unit is not None and not _PAGE_FOOTER_RE.match(stripped):
+            if (
+                stripped and current_toc_unit is not None
+                and not _PAGE_FOOTER_RE.match(stripped)
+                and not _is_excluded_title(stripped)
+            ):
                 toc_by_unit[current_toc_unit].append(stripped)
             i += 1
             continue
@@ -424,6 +435,9 @@ Rules:
   (e.g. a running module title, or a page number), copy ONE exact
   instance of it into running_header so it can be stripped from content
   — or null if you don't see one.
+- Never include a glosario/glossary or taller/workshop section as an
+  épigrafe — these aren't real training content, leave them out of the
+  epigrafes list entirely even if they appear as their own heading.
 """
 
 
@@ -539,7 +553,7 @@ def _parse_generic_via_llm(text: str) -> dict:
             epi_raw = []
             for e in u.get("epigrafes") or []:
                 title = (e.get("titulo") or "").strip()
-                if not title:
+                if not title or _is_excluded_title(title):
                     continue
                 pos = _find_verbatim(text, title, cursor)
                 if pos is None:

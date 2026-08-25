@@ -33,7 +33,9 @@ is a two-part question, and both parts matter before you generate anything:
    document, skip this part and confirm your read of it instead.
 
 2. **Depth**: within whichever unit(s) are in scope, identify the distinct
-   epÃ­grafes (their titles/numbers) and ask:
+   epÃ­grafes (their titles/numbers) â excluding any glosario/glossary or
+   taller/workshop section, which never gets a deck and never gets listed
+   as a choice â and ask:
    > Unit "<name>" has N epÃ­grafes: [list them]. Do you want a deck for
    > just one, a specific subset, or all N?
 
@@ -41,7 +43,9 @@ is a two-part question, and both parts matter before you generate anything:
    specific subset (tell me which)", and "All N". If the user already named
    a specific epÃ­grafe (or an explicit count) when they made the request,
    skip the question and confirm your read of it instead ("I'll generate
-   decks for epÃ­grafes 2â4 of unit '<name>' â correct?").
+   decks for epÃ­grafes 2â4 of unit '<name>' â correct?"). If they explicitly
+   name a glosario/taller section, tell them it's excluded rather than
+   building a deck for it.
 
 If scope is "whole course", repeat the depth question **per unit** (a
 "thin" unit and a "rich" unit may warrant different answers) â don't reuse
