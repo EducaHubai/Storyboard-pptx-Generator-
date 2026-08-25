@@ -305,6 +305,19 @@ def _delete_job_files(job_id: str) -> None:
         pass
 
 
+def delete_job(job_id: str) -> None:
+    """Manually removes one job from history — memory, job.json, decks/,
+    and the zip. Refuses a still-running job (nothing to safely delete
+    out from under an in-flight render)."""
+    job = JOBS.get(job_id)
+    if job is None:
+        raise KeyError(job_id)
+    if job["status"] == "running":
+        raise ValueError("Job is still running — cancel it first")
+    _delete_job_files(job_id)
+    del JOBS[job_id]
+
+
 def prune_old_jobs(now: float | None = None) -> int:
     """Deletes jobs — from memory and disk (job.json, decks/, the zip) —
     whose created_at is older than RETENTION_DAYS. Only ever touches a

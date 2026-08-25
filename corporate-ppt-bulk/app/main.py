@@ -8,6 +8,7 @@
     POST /jobs/{job_id}/cancel — stop starting any more not-yet-started épigrafes
     POST /jobs/{job_id}/retry — re-run only this job's failed/skipped épigrafes
     GET  /jobs/{job_id}/download — download the finished zip
+    DELETE /jobs/{job_id}     — manually remove one job from history
     GET  /health              — liveness + config check
 
 Every job is persisted to disk as it runs; load_persisted_jobs() (called
@@ -269,6 +270,19 @@ async def retry_job(job_id: str, req: RetryRequest = RetryRequest()):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return _job_view(job)
+
+
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: str):
+    """Manually removes one job from history — memory, job.json, decks/,
+    and the zip. Refuses a still-running job; cancel it first."""
+    try:
+        jobs.delete_job(job_id)
+    except KeyError:
+        raise HTTPException(404, "Unknown job_id")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"deleted": job_id}
 
 
 @app.get("/jobs/{job_id}/download")

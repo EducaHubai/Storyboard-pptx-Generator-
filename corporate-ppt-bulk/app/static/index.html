@@ -139,6 +139,8 @@
     transition: border-color 150ms ease, color 150ms ease; min-height: 36px;
   }
   .chip:hover { border-color: var(--burdeos); color: var(--burdeos); }
+  .chip-danger:hover { border-color: var(--errorText); color: var(--errorText); }
+  .chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .footer-bar {
     display: flex; align-items: center; justify-content: space-between; margin-top: 32px;
@@ -941,8 +943,30 @@ function renderHistoryCard(j) {
     retryBtn.onclick = () => retryFailed(j.job_id);
     actions.appendChild(retryBtn);
   }
+  if (j.status !== "running") {
+    const delBtn = document.createElement("button");
+    delBtn.className = "chip chip-danger"; delBtn.textContent = "🗑 Delete";
+    delBtn.disabled = state.loading;
+    delBtn.onclick = () => deleteHistoryJob(j.job_id);
+    actions.appendChild(delBtn);
+  }
   card.appendChild(actions);
   return card;
+}
+
+async function deleteHistoryJob(jobId) {
+  if (!window.confirm("Delete this job from history? This also deletes its generated decks and can't be undone.")) return;
+  state.loading = true; state.error = null; render();
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+    state.historyJobs = (state.historyJobs || []).filter((j) => j.job_id !== jobId);
+  } catch (e) {
+    state.error = e.message === "Failed to fetch" ? "Could not reach the backend." : e.message;
+  } finally {
+    state.loading = false; render();
+  }
 }
 
 async function openHistoryJob(jobId) {
