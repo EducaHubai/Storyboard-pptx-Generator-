@@ -772,7 +772,7 @@ function pollJob() {
       if (data.status === "done") {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
-        state.screen = "result";
+        if (state.screen === "progress") state.screen = "result";
       }
       render();
     } catch (e) {
@@ -874,8 +874,7 @@ function renderHistory() {
   wrap.innerHTML = `
     <span class="eyebrow">History</span>
     <h1>Past jobs</h1>
-    <p class="lead">Every generation this server has run since it last restarted, plus any large
-    (50+ épigrafe) job recovered after a crash. Smaller jobs from before a restart aren't kept.</p>
+    <p class="lead">Every generation this server has run, kept for 30 days.</p>
   `;
   const backBtn = document.createElement("button");
   backBtn.className = "link-btn"; backBtn.textContent = "← Back";
