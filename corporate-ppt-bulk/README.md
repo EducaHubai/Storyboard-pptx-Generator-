@@ -124,30 +124,34 @@ curl -s -X POST "$BASE/jobs/JOB_ID/retry" -H "Content-Type: application/json" -d
   "tasks": [{"modulo": "B1-01", "unidad": 1, "codigo": "1.2"}]
 }' | jq
 
-# 6. Historial: todos los jobs que este proceso conoce, más recientes primero
-#    (botón "History" en la UI). Solo cubre jobs desde el último reinicio,
-#    más cualquier job grande (>50 epígrafes) recuperado tras un crash — un
-#    job pequeño de antes de un reinicio no queda registrado.
+# 6. Historial: todos los jobs creados en este DATA_DIR, más recientes
+#    primero (botón "History" en la UI). Persistido en disco sin importar
+#    el tamaño del job, así que sobrevive a un reinicio.
 curl -s "$BASE/jobs" | jq
 ```
 
 ## Límites conocidos (v1)
 
-- **Estado en memoria, con autosave a partir de 50 epígrafes**: los
-  documentos parseados y los jobs pequeños (≤50 epígrafes) viven solo en RAM
-  — un redeploy/reinicio los borra sin más. Un job de más de 50 epígrafes
-  (`jobs.AUTOSAVE_THRESHOLD`) escribe cada `.pptx` a disco (`/srv/data/jobs/`)
-  en cuanto termina y persiste el estado del job tras cada cambio, en vez de
-  guardar todo solo en memoria hasta el final. Si el proceso muere a mitad
-  (crash, OOM, redeploy) montando `/srv/data` como volumen, al arrancar de
-  nuevo `load_persisted_jobs()` recupera esos jobs: lo que ya estaba "done"
-  se queda así, lo que estaba a medias vuelve a quedar como fallo reintentable
-  (nunca se pierde en un estado fantasma). Si dejaste la pestaña abierta,
-  el polling normal (`GET /jobs/{job_id}`) recoge el job recuperado solo con
-  que el proceso vuelva a estar arriba — no hace falta ninguna acción nueva.
-  Esto solo protege contra un crash del *proceso*; si `/srv/data` no está
-  montado como volumen persistente, un contenedor nuevo tampoco tiene esos
-  archivos y no hay nada que recuperar.
+- **Documentos parseados en memoria; jobs persistidos en disco**: los PDFs
+  parseados (`DOCUMENTS`) solo viven en RAM — un redeploy/reinicio los borra,
+  tendrás que volver a llamar a `/documents`. Los jobs, en cambio, escriben
+  cada `.pptx` a disco (`/srv/data/jobs/{job_id}/decks/`) en cuanto termina y
+  persisten el estado del job tras cada cambio, sin importar cuántos
+  epígrafes tenga — nada se guarda solo en memoria hasta el final. Si el
+  proceso muere a mitad (crash, OOM, redeploy) montando `/srv/data` como
+  volumen, al arrancar de nuevo `load_persisted_jobs()` recupera todos esos
+  jobs: lo que ya estaba "done" se queda así, lo que estaba a medias vuelve a
+  quedar como fallo reintentable (nunca se pierde en un estado fantasma). Si
+  dejaste la pestaña abierta, el polling normal (`GET /jobs/{job_id}`) recoge
+  el job recuperado solo con que el proceso vuelva a estar arriba — no hace
+  falta ninguna acción nueva. Esto solo protege contra un crash del
+  *proceso*; si `/srv/data` no está montado como volumen persistente, un
+  contenedor nuevo tampoco tiene esos archivos y no hay nada que recuperar.
+  **Retención: 30 días** (`jobs.RETENTION_DAYS`). Un job terminado ("done")
+  con más de 30 días se borra por completo — memoria, `job.json`, decks y
+  zip — automáticamente al arrancar el proceso y luego una vez al día
+  mientras sigue corriendo. Un job "running"/"pending" nunca se borra por
+  edad, sin importar lo que diga su `created_at`.
 - **Parar un job en curso**: el botón "Stop" (o `POST /jobs/{id}/cancel`) deja
   de arrancar epígrafes que no habían empezado (quedan "skipped", reintentables
   después); los que ya estaban corriendo (máx. 2, por la concurrencia) se dejan

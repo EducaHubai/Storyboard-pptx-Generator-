@@ -10,16 +10,19 @@
     GET  /jobs/{job_id}/download — download the finished zip
     GET  /health              — liveness + config check
 
-Jobs over jobs.AUTOSAVE_THRESHOLD épigrafes are persisted to disk as they
-run; load_persisted_jobs() (called at startup, below) recovers them after
-a crash/redeploy so an already-open browser tab's polling picks the job
-back up instead of hitting a 404.
+Every job is persisted to disk as it runs; load_persisted_jobs() (called
+at startup, below) recovers all of them after a crash/redeploy so an
+already-open browser tab's polling picks the job back up instead of
+hitting a 404, and job history survives restarts too. Finished jobs
+older than jobs.RETENTION_DAYS are auto-deleted (memory + disk) at
+startup and once a day thereafter via prune_old_jobs()/_prune_loop().
 
 No auth layer here on purpose — Coolify's own access protection is the
 boundary (see README).
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import sys
@@ -37,11 +40,29 @@ app = FastAPI(title="corporate-ppt-bulk")
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
+_PRUNE_INTERVAL_SECONDS = 24 * 60 * 60  # daily is plenty for a 30-day retention window
+
+
+async def _prune_loop():
+    while True:
+        await asyncio.sleep(_PRUNE_INTERVAL_SECONDS)
+        try:
+            pruned = jobs.prune_old_jobs()
+            if pruned:
+                print(f"Pruned {pruned} job(s) older than {jobs.RETENTION_DAYS} days", file=sys.stderr)
+        except Exception as e:
+            print(f"prune_old_jobs failed: {e}", file=sys.stderr)
+
+
 @app.on_event("startup")
-def _recover_persisted_jobs():
+async def _recover_persisted_jobs():
     recovered = jobs.load_persisted_jobs()
     if recovered:
-        print(f"Recovered {recovered} autosave job(s) from a previous run", file=sys.stderr)
+        print(f"Recovered {recovered} job(s) from a previous run", file=sys.stderr)
+    pruned = jobs.prune_old_jobs()
+    if pruned:
+        print(f"Pruned {pruned} job(s) older than {jobs.RETENTION_DAYS} days", file=sys.stderr)
+    asyncio.create_task(_prune_loop())
 
 _PDF_CONTENT_TYPES = ("application/pdf", "application/x-pdf")
 _ZIP_CONTENT_TYPES = ("application/zip", "application/x-zip-compressed", "application/x-zip")
@@ -139,10 +160,9 @@ class JobRequest(BaseModel):
 
 @app.get("/jobs")
 def list_jobs():
-    """Job history: every job this process knows about, newest first —
-    in-memory jobs from since the last restart, plus any autosave-tier
-    job recovered from disk at startup. See jobs.list_jobs()'s docstring
-    for what's NOT covered (a small job from before a restart)."""
+    """Job history: every job ever created on this DATA_DIR, newest
+    first — persisted to disk regardless of size, so this survives a
+    restart, not just this process's uptime."""
     return {"jobs": [_job_summary(j) for j in jobs.list_jobs()]}
 
 

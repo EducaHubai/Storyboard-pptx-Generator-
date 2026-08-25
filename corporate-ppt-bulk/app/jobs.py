@@ -1,21 +1,24 @@
 """Document/job store + background orchestration.
 
-Small jobs (≤50 épigrafes) stay exactly as before: pure in-memory,
-zip assembled once at the end from bytes held on each task. Nothing
-about that path changed.
+Every job — one épigrafe or a thousand — gets real durability: each
+rendered .pptx is written straight to DATA_DIR/jobs/{job_id}/decks/ as
+soon as it's done (never held in memory), and the job's state is
+persisted to DATA_DIR/jobs/{job_id}/job.json after every task status
+change. If the process dies mid-job (crash, OOM, redeploy),
+load_persisted_jobs() — called once at startup — reloads every job left
+on disk, marks whatever was still "pending"/"running" as a retryable
+"error" (never left silently stuck), and rebuilds the zip from whatever
+decks already made it to disk. An open browser tab just keeps polling
+GET /jobs/{job_id} through the outage and picks the recovered state back
+up automatically — no new frontend concept needed, it's the same "Retry
+N failed" flow used for any other failure. This is also what makes job
+history (list_jobs()) actually survive a restart instead of only
+covering whatever's happened since the process last came up.
 
-Bigger jobs (>50 épigrafes — AUTOSAVE_THRESHOLD) get durability that
-actually matters at that scale: each rendered .pptx is written straight
-to DATA_DIR/jobs/{job_id}/decks/ as soon as it's done (never held in
-memory), and the job's state is persisted to DATA_DIR/jobs/{job_id}/job.json
-after every task status change. If the process dies mid-job (crash,
-OOM, redeploy), load_persisted_jobs() — called once at startup — reloads
-every such job, marks whatever was still "pending"/"running" as a
-retryable "error" (never left silently stuck), and rebuilds the zip from
-whatever decks already made it to disk. An open browser tab just keeps
-polling GET /jobs/{job_id} through the outage and picks the recovered
-state back up automatically — no new frontend concept needed, it's the
-same "Retry N failed" flow used for any other failure.
+Note: nothing currently deletes old job folders from DATA_DIR — history
+and its backing decks accumulate indefinitely. Fine at today's usage;
+worth adding a retention policy if that ever becomes a real disk-usage
+concern.
 
 Jobs can also be stopped mid-run (cancel_job): tasks not yet started are
 marked "skipped" and left retryable; tasks already in flight (at most 2,
@@ -46,11 +49,6 @@ import render as render_engine  # noqa: E402
 
 DATA_DIR = os.environ.get("DATA_DIR", "/srv/data")
 os.makedirs(DATA_DIR, exist_ok=True)
-
-# Above this many épigrafes, a job gets disk-backed durability (immediate
-# per-deck writes + persisted job.json) instead of pure in-memory state —
-# the point where losing everything to a crash actually hurts.
-AUTOSAVE_THRESHOLD = 50
 
 DOCUMENTS: dict[str, dict] = {}
 JOBS: dict[str, dict] = {}
@@ -217,7 +215,10 @@ def resolve_selection(structure: dict, selection: dict) -> list[dict]:
     return tasks
 
 
-# ── Persistence (autosave-tier jobs only) ───────────────────
+RETENTION_DAYS = 30
+
+
+# ── Persistence ──────────────────────────────────────────────
 def _job_dir(job_id: str) -> str:
     return os.path.join(DATA_DIR, "jobs", job_id)
 
@@ -231,13 +232,9 @@ def _deck_path(job_id: str, task: dict) -> str:
 
 
 def _persist_job(job: dict) -> None:
-    """Writes job.json for autosave-tier jobs only — a no-op for smaller
-    jobs, which stay pure in-memory exactly as before. Every field on a
-    job/task dict is already JSON-safe (autosave jobs never hold raw
-    pptx bytes in the task dict — those go straight to disk instead), so
-    this can serialize the dict directly."""
-    if not job.get("autosave"):
-        return
+    """Writes job.json to disk. Every field on a job/task dict is already
+    JSON-safe (a task never holds raw pptx bytes — those go straight to
+    disk instead), so this can serialize the dict directly."""
     d = _job_dir(job["job_id"])
     os.makedirs(d, exist_ok=True)
     tmp_path = os.path.join(d, "job.json.tmp")
@@ -259,9 +256,10 @@ def _build_zip_from_decks_dir(job_id: str) -> str:
 
 
 def load_persisted_jobs() -> int:
-    """Call once at process startup. Reloads any autosave-tier jobs left
-    on disk by a previous process (crash, OOM, redeploy) so a still-open
-    browser tab's polling picks the job back up instead of hitting a 404.
+    """Call once at process startup. Reloads every job left on disk by a
+    previous process (crash, OOM, redeploy) so a still-open browser tab's
+    polling picks the job back up instead of hitting a 404, and so job
+    history covers more than just this process's uptime.
     Any task that was "pending" or "running" when the process died is
     reset to "error" — nothing is left stuck silently; it's retryable via
     the normal retry_failed() flow, same as any other failure. Returns
@@ -299,6 +297,37 @@ def load_persisted_jobs() -> int:
     return recovered
 
 
+def _delete_job_files(job_id: str) -> None:
+    shutil.rmtree(_job_dir(job_id), ignore_errors=True)
+    try:
+        os.remove(os.path.join(DATA_DIR, f"{job_id}.zip"))
+    except FileNotFoundError:
+        pass
+
+
+def prune_old_jobs(now: float | None = None) -> int:
+    """Deletes jobs — from memory and disk (job.json, decks/, the zip) —
+    whose created_at is older than RETENTION_DAYS. Only ever touches a
+    finished job (status == "done"); a running/pending one is left alone
+    no matter what its created_at says, since that'd mean deleting work
+    still in flight. Call at startup (catches anything that aged out
+    while the process was down) and periodically thereafter (a long-
+    running process without a restart still ages jobs out). Returns how
+    many were pruned."""
+    now = now if now is not None else time.time()
+    cutoff = now - RETENTION_DAYS * 86400
+    pruned = 0
+    for job_id, job in list(JOBS.items()):
+        if job.get("status") != "done":
+            continue
+        if (job.get("created_at") or 0) >= cutoff:
+            continue
+        _delete_job_files(job_id)
+        del JOBS[job_id]
+        pruned += 1
+    return pruned
+
+
 # ── Jobs ─────────────────────────────────────────────────────
 def create_job(doc_id: str, selection: dict, language: str = "English", model: str | None = None) -> dict:
     structure = get_document(doc_id)
@@ -317,7 +346,6 @@ def create_job(doc_id: str, selection: dict, language: str = "English", model: s
         "zip_path": None,
         "download_ready": False,
         "error": None,
-        "autosave": len(tasks) > AUTOSAVE_THRESHOLD,
         "cancel_requested": False,
         "cancelled": False,
         "created_at": time.time(),
@@ -333,12 +361,10 @@ def get_job(job_id: str) -> dict | None:
 
 
 def list_jobs() -> list[dict]:
-    """Every job this process knows about, newest first — in-memory jobs
-    created since the last restart, plus any autosave-tier job
-    load_persisted_jobs() recovered from disk at startup. A small
-    (non-autosave) job from before a restart is gone, same as the rest
-    of this process's in-memory state — there's no persisted history for
-    those."""
+    """Every job ever created on this DATA_DIR, newest first — in-memory
+    jobs from the current process plus everything load_persisted_jobs()
+    recovered from disk at startup, since every job is now persisted
+    regardless of size."""
     return sorted(JOBS.values(), key=lambda j: j.get("created_at") or 0, reverse=True)
 
 
@@ -406,9 +432,8 @@ def retry_failed(job_id: str, task_refs: list[dict] | None = None) -> dict:
     after a crash), so the caller never has to re-upload the PDF(s) or
     reselect scope just because one épigrafe (out of one, or one out of
     many) hit a transient failure, got skipped by a stop, or was
-    interrupted by a restart. Newly-succeeded decks are appended to the
-    existing zip rather than rebuilding it from scratch (small jobs) or
-    written straight to disk and re-zipped (autosave-tier jobs).
+    interrupted by a restart. Newly-succeeded decks are written straight
+    to disk and the zip is rebuilt from everything there.
 
     `task_refs`, if given, is a list of {"modulo", "unidad", "codigo"}
     identifying exactly which failed/skipped tasks to retry (the "redo
@@ -448,12 +473,11 @@ def retry_failed(job_id: str, task_refs: list[dict] | None = None) -> dict:
     return job
 
 
-def _render_one_task(task: dict, language: str, model: str | None, deck_path: str | None) -> None:
+def _render_one_task(task: dict, language: str, model: str | None, deck_path: str) -> None:
     """Runs in a worker thread: generate the plan (OpenAI, with its own
-    internal retry), then render it to .pptx. Mutates task in place.
-    When `deck_path` is given (autosave-tier jobs), the file is written
-    straight to disk and never held in memory; otherwise its bytes are
-    kept on the task dict until the job's final in-memory zip step."""
+    internal retry), then render it to .pptx. Mutates task in place. The
+    file is written straight to `deck_path` on disk and never held in
+    memory."""
     unit_meta = {
         "unidad_nombre": task["unidad_nombre"],
         "modulo": task["modulo"],
@@ -471,13 +495,8 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
             print(f"WARNING: font embedding failed for {task['codigo']}: {font_err}", file=sys.stderr)
 
         task["filename"] = _build_filename(task)
-
-        if deck_path:
-            os.makedirs(os.path.dirname(deck_path), exist_ok=True)
-            shutil.copyfile(out_path, deck_path)
-        else:
-            with open(out_path, "rb") as f:
-                task["_pptx_bytes"] = f.read()
+        os.makedirs(os.path.dirname(deck_path), exist_ok=True)
+        shutil.copyfile(out_path, deck_path)
 
     task["content_warning"] = plan.get("contentWarning")
 
@@ -521,7 +540,6 @@ async def _run_tasks(job: dict, tasks: list[dict]) -> None:
     leaving nothing to skip. Only 2 tasks can be past the `async with`
     at once, so the other N-2 are genuinely waiting — by the time a slot
     frees up, a since-set flag is reliably seen."""
-    autosave = job.get("autosave", False)
 
     async def run_task(task):
         async with _CONCURRENCY_LIMITER:
@@ -533,7 +551,7 @@ async def _run_tasks(job: dict, tasks: list[dict]) -> None:
             task["status"] = "running"
             task["started_at"] = time.time()
             _persist_job(job)
-            deck_path = _deck_path(job["job_id"], task) if autosave else None
+            deck_path = _deck_path(job["job_id"], task)
             try:
                 await anyio.to_thread.run_sync(_render_one_task, task, job["language"], job["model"], deck_path)
                 task["status"] = "done"
@@ -555,17 +573,7 @@ async def _run_job(job_id: str) -> None:
     _persist_job(job)
     await _run_tasks(job, job["tasks"])
 
-    if job.get("autosave"):
-        zip_path = _build_zip_from_decks_dir(job_id)
-    else:
-        zip_path = os.path.join(DATA_DIR, f"{job_id}.zip")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for task in job["tasks"]:
-                if task["status"] != "done":
-                    continue
-                zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
-
-    job["zip_path"] = zip_path
+    job["zip_path"] = _build_zip_from_decks_dir(job_id)
     job["download_ready"] = True
     job["status"] = "done"
     _persist_job(job)
@@ -575,18 +583,7 @@ async def _run_retry(job_id: str, tasks: list[dict]) -> None:
     job = JOBS[job_id]
     await _run_tasks(job, tasks)
 
-    if job.get("autosave"):
-        job["zip_path"] = _build_zip_from_decks_dir(job_id)
-    else:
-        # Append-only: previously successful tasks already have their bytes
-        # written into the zip and popped from memory — only newly-done
-        # tasks from this retry round need adding.
-        newly_done = [t for t in tasks if t["status"] == "done"]
-        if newly_done:
-            with zipfile.ZipFile(job["zip_path"], "a", zipfile.ZIP_DEFLATED) as zf:
-                for task in newly_done:
-                    zf.writestr(_zip_arcname(task), task.pop("_pptx_bytes"))
-
+    job["zip_path"] = _build_zip_from_decks_dir(job_id)
     job["download_ready"] = True
     job["status"] = "done"
     _persist_job(job)
