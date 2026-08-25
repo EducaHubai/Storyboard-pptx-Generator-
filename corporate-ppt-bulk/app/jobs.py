@@ -484,10 +484,18 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
 
 def _build_filename(task: dict) -> str:
     """[código módulo]_[número épigrafe]-[nombre épigrafe].pptx — e.g.
-    'C04-01_1.1-Historical evolution of AI.pptx'."""
+    'C04-01_1.1-Historical evolution of AI.pptx'.
+
+    Some source headings already carry their own leading number (e.g. the
+    real heading is "2.4 Implementation of the AI Act..."), which would
+    otherwise repeat right after the número épigrafe segment we add —
+    "..._2.4-2.4 Implementation...". Strip a leading occurrence of the
+    épigrafe's own código from the title first so it isn't shown twice."""
     codigo_modulo = _clean_filename(task["modulo"])
     numero_epigrafe = _clean_filename(task["codigo"])
-    nombre_epigrafe = _clean_filename(task["titulo"])
+    titulo = (task["titulo"] or "").strip()
+    sin_numero = re.sub(rf"^{re.escape(task['codigo'])}\s*[.\-:]?\s*", "", titulo)
+    nombre_epigrafe = _clean_filename(sin_numero or titulo)
     return f"{codigo_modulo}_{numero_epigrafe}-{nombre_epigrafe}.pptx"
 
 
