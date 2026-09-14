@@ -155,7 +155,9 @@ class Selection(BaseModel):
 class JobRequest(BaseModel):
     doc_id: str
     selection: Selection
-    language: Optional[str] = "English"
+    # None (the default — the frontend never sends this today) means: use
+    # the source document's own detected language instead of forcing one.
+    language: Optional[str] = None
     model: Optional[str] = None
 
 
@@ -190,7 +192,7 @@ async def create_job(req: JobRequest):
         job = jobs.create_job(
             doc_id=req.doc_id,
             selection=req.selection.model_dump(),
-            language=req.language or "English",
+            language=req.language,
             model=req.model,
         )
     except ValueError as e:

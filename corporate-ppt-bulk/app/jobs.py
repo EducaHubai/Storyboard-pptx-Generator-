@@ -87,9 +87,12 @@ def _merge_structures(named_structures: list[tuple[str, dict]]) -> dict:
     modulos: list[dict] = []
     seen: dict[str, str] = {}  # código -> filename that first claimed it
     certificado = ""
+    language_code, language_name = "en", "English"
     for filename, s in named_structures:
         if not certificado:
             certificado = s.get("certificado", "")
+            language_code = s.get("language_code", language_code)
+            language_name = s.get("language_name", language_name)
         for m in s["modulos"]:
             codigo = m["modulo"]
             if codigo in seen:
@@ -104,7 +107,12 @@ def _merge_structures(named_structures: list[tuple[str, dict]]) -> dict:
                 m["modulo"] = codigo
             seen[codigo] = filename
             modulos.append(m)
-    return {"certificado": certificado, "modulos": modulos}
+    return {
+        "certificado": certificado,
+        "modulos": modulos,
+        "language_code": language_code,
+        "language_name": language_name,
+    }
 
 
 def create_document(pdfs: list[tuple[str, bytes]]) -> tuple[str, dict]:
@@ -342,17 +350,29 @@ def prune_old_jobs(now: float | None = None) -> int:
 
 
 # ── Jobs ─────────────────────────────────────────────────────
-def create_job(doc_id: str, selection: dict, language: str = "English", model: str | None = None) -> dict:
+def create_job(doc_id: str, selection: dict, language: str | None = None, model: str | None = None) -> dict:
+    """`language` is the caller's explicit override for the LLM
+    content-generation language (author.py); leave it unset (None/empty)
+    to default to the source document's own detected language — set once
+    per doc by parser.parse_document — instead of always forcing
+    English."""
     structure = get_document(doc_id)
     if structure is None:
         raise ValueError(f"Unknown doc_id '{doc_id}' — has it been re-uploaded since the last redeploy?")
 
     tasks = resolve_selection(structure, selection)
     job_id = uuid.uuid4().hex
+    resolved_language = language or structure.get("language_name") or "English"
+    language_code = (
+        pdf_parser.LANGUAGE_CODE_BY_NAME.get(resolved_language.lower())
+        or (structure.get("language_code") if not language else None)
+        or "en"
+    )
     job = {
         "job_id": job_id,
         "doc_id": doc_id,
-        "language": language,
+        "language": resolved_language,
+        "language_code": language_code,
         "model": model,
         "status": "pending",
         "tasks": tasks,
@@ -486,7 +506,7 @@ def retry_failed(job_id: str, task_refs: list[dict] | None = None) -> dict:
     return job
 
 
-def _render_one_task(task: dict, language: str, model: str | None, deck_path: str) -> None:
+def _render_one_task(task: dict, language: str, language_code: str, model: str | None, deck_path: str) -> None:
     """Runs in a worker thread: generate the plan (OpenAI, with its own
     internal retry), then render it to .pptx. Mutates task in place. The
     file is written straight to `deck_path` on disk and never held in
@@ -501,7 +521,7 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         out_path = os.path.join(tmp_dir, "deck.pptx")
-        render_engine.assemble_pptx(plan, tmp_dir, out_path)
+        render_engine.assemble_pptx(plan, tmp_dir, out_path, language_code=language_code)
         try:
             render_engine.embed_fonts(out_path)
         except Exception as font_err:  # non-fatal: ship without embedded fonts
@@ -566,7 +586,9 @@ async def _run_tasks(job: dict, tasks: list[dict]) -> None:
             _persist_job(job)
             deck_path = _deck_path(job["job_id"], task)
             try:
-                await anyio.to_thread.run_sync(_render_one_task, task, job["language"], job["model"], deck_path)
+                await anyio.to_thread.run_sync(
+                    _render_one_task, task, job["language"], job.get("language_code", "en"), job["model"], deck_path
+                )
                 task["status"] = "done"
             except Exception as e:
                 task["status"] = "error"

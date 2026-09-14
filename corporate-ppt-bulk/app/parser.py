@@ -36,6 +36,7 @@ import subprocess
 import tempfile
 import os
 
+import langdetect
 from openai import OpenAI
 
 
@@ -59,6 +60,66 @@ _EXCLUDED_TITLE_RE = re.compile(r"\b(glosario|glossary|taller(?:es)?|workshops?)
 
 def _is_excluded_title(title: str) -> bool:
     return bool(_EXCLUDED_TITLE_RE.search(title or ""))
+
+
+langdetect.DetectorFactory.seed = 0  # deterministic detect() across runs
+
+_LANGUAGE_NAMES = {
+    "en": "English", "es": "Spanish", "pt": "Portuguese", "fr": "French",
+    "de": "German", "it": "Italian", "ca": "Catalan", "eu": "Basque",
+    "gl": "Galician", "nl": "Dutch",
+}
+# Reverse lookup for jobs.create_job: when the caller passes an explicit
+# `language` override (e.g. "Spanish") instead of accepting the detected
+# default, the chrome-label language (render/templates.py) should follow
+# that override too, not the source document's own detected code.
+LANGUAGE_CODE_BY_NAME = {name.lower(): code for code, name in _LANGUAGE_NAMES.items()}
+
+
+def _detect_language(text: str) -> tuple[str, str]:
+    """Detects the source document's main language once, from a sample of
+    its real extracted text. Used as the default for both author.py's LLM
+    content-generation `language` (when the caller didn't ask for a
+    specific one) and templates.py's chrome-label translations, so a
+    document doesn't get English/Spanish content mismatched against
+    Spanish-only-hardcoded labels regardless of what the PDF is actually
+    written in. Falls back to English on anything langdetect can't read a
+    confident language out of (e.g. an all-numeric/table-only sample) —
+    detection is a best-effort default, never a reason to fail an upload."""
+    sample = (text or "").strip()[:8000]
+    try:
+        code = langdetect.detect(sample)
+    except langdetect.lang_detect_exception.LangDetectException:
+        return "en", "English"
+    return code, _LANGUAGE_NAMES.get(code, "English")
+
+
+_CODE_STOPWORDS = {
+    "a", "an", "the", "and", "or", "of", "in", "on", "for", "to", "with",
+    "de", "la", "el", "los", "las", "y", "en", "del", "al",
+}
+_MAX_DERIVED_CODE_LEN = 24
+
+
+def _derive_short_code(nombre: str, index: int) -> str:
+    """Fallback for when the generic LLM parser doesn't return a genuinely
+    short `modulo` code (missing, or — as seen in practice — the full
+    title copied verbatim into the code field too). Builds an acronym from
+    the title's significant words' initials, e.g. "Nonviolent Communication
+    and Conflict Management in Digital Educational Environments" -> "NCCMDEE",
+    then suffixes the module's 1-based position in the document so two
+    modules can never collide even if their acronyms happen to match."""
+    words = re.findall(r"[^\W\d_]+", nombre or "", flags=re.UNICODE)
+    significant = [w for w in words if w.lower() not in _CODE_STOPWORDS]
+    initials = "".join(w[0].upper() for w in (significant or words)[:8]) or "MOD"
+    return f"{initials}-{index:02d}"
+
+
+def _validated_module_code(raw_code: str | None, nombre: str, index: int) -> str:
+    code = (raw_code or "").strip()
+    if not code or len(code) > _MAX_DERIVED_CODE_LEN or code.lower() == (nombre or "").strip().lower():
+        return _derive_short_code(nombre, index)
+    return code
 
 
 def _pdf_to_text(pdf_bytes: bytes) -> str:
@@ -537,7 +598,7 @@ def _parse_generic_via_llm(text: str) -> dict:
     cursor = 0
     modulos_out = []
 
-    for m in modulos_in:
+    for idx, m in enumerate(modulos_in, start=1):
         m_name = (m.get("nombre") or "").strip()
         m_pos = _find_verbatim(text, m_name, cursor) if m_name else None
         if m_pos:
@@ -567,7 +628,8 @@ def _parse_generic_via_llm(text: str) -> dict:
             if epi_raw:
                 unidades_out.append({"unidad": u.get("unidad"), "nombre": u_name or f"Unit {u.get('unidad')}", "_raw": epi_raw})
         if unidades_out:
-            modulos_out.append({"modulo": m.get("modulo") or "", "nombre": m_name, "unidades": unidades_out})
+            code = _validated_module_code(m.get("modulo"), m_name, idx)
+            modulos_out.append({"modulo": code, "nombre": m_name, "unidades": unidades_out})
 
     all_starts.sort()
 
@@ -607,15 +669,21 @@ def _parse_generic_via_llm(text: str) -> dict:
 def parse_document(pdf_bytes: bytes) -> dict:
     """Tries the free/deterministic EDUCALLM-shaped regex parser first;
     if the document doesn't match that exact structure, falls back to
-    LLM-identified generic structure detection (see module docstring)."""
+    LLM-identified generic structure detection (see module docstring).
+    Either way, also detects the source text's language once and attaches
+    it as `language_code`/`language_name` so callers can default to it
+    instead of hardcoding English."""
     text = _pdf_to_text(pdf_bytes)
     try:
-        return _parse_educallm_format(text)
+        structure = _parse_educallm_format(text)
     except ParserError as educallm_err:
         try:
-            return _parse_generic_via_llm(text)
+            structure = _parse_generic_via_llm(text)
         except ParserError as generic_err:
             raise ParserError(
                 f"Doesn't match the known EDUCALLM format ({educallm_err}), and generic "
                 f"structure detection also failed: {generic_err}"
             ) from generic_err
+
+    structure["language_code"], structure["language_name"] = _detect_language(text)
+    return structure

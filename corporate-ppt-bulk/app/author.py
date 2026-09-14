@@ -13,10 +13,11 @@ rules Structured Outputs can't express (slide counts, no-repeat-variant),
 and a single retry is attempted with those errors fed back to the model
 before giving up.
 
-Chrome labels ("Conceptos", "Resumen", "MITO"/"REALIDAD", etc.) are
-hardcoded in render/templates.py regardless of `language` — the render
-engine is copied unchanged from the Skill on purpose, so only the
-slide *content* (titles, promises, card text, steps) is translated here.
+Chrome labels ("Conceptos"/"Concepts", "Resumen"/"Summary",
+"MITO"/"MYTH", etc.) are translated separately, in
+render/templates.py's CHROME_LABELS, keyed by the job's detected/explicit
+language_code (jobs.create_job) — this module only controls the slide
+*content* (titles, promises, card text, steps) via `language`.
 """
 from __future__ import annotations
 
@@ -76,9 +77,9 @@ avatar in HeyGen.
 - Every slide's content must come from the real source text provided — no
   invented facts, no placeholder text.
 - Write all slide content (titles, promise, card text, steps, myth/reality
-  rows) in: {language}. (Fixed chrome labels like "Conceptos"/"Resumen" are
-  rendered by the unchanged render engine and stay as-is regardless of
-  this — only the content you write is affected.)
+  rows) in: {language}. (Chrome labels like "Conceptos"/"Resumen" are
+  translated separately by the render engine, keyed off the job's
+  language — you don't need to account for them here.)
 - `cierre.fields.title` is a short closing phrase equivalent to "Thank
   you", written in {language}.
 - `titulo` and `inicio` never show the epígrafe's number/prefix, even if
@@ -91,17 +92,26 @@ avatar in HeyGen.
 
 Before returning the JSON, review the full set of drafted slide content
 across the whole deck — all concepto, puntos_clave, and resumen items
-together, not slide-by-slide in isolation — for two failure modes:
+together, not slide-by-slide in isolation — for two failure modes. Run
+this gate only once you already have a full draft that meets the 12-15
+total / 8-11 combined concepto+puntos_clave targets above — its job is to
+swap out weak or duplicate slides for better real content, never to
+shrink the deck below those targets. Dropping a slide outright (and
+therefore falling below the targets, with contentWarning) is a last
+resort for when the source genuinely doesn't contain enough distinct
+material to replace it — not the default response to spotting a
+duplicate.
 
 1. Duplicate or near-duplicate content. Compare each slide's core point
    against every other slide's. A concepto and a puntos_clave slide (or
    two concepto slides) that restate the same idea in different words is
-   a real duplicate, not two distinct ideas. If you find one, don't
-   include both — merge them into a single slide, replace the weaker one
-   with distinct content that's actually in the source, or drop it. If
-   dropping one would leave a section short of the 3-5 slide minimum,
-   treat it like the no-filler rule above: set contentWarning explaining
-   why rather than padding with a near-duplicate to hit the count.
+   a real duplicate, not two distinct ideas. Fix it by replacing the
+   weaker one with different content that's genuinely in the source —
+   the épigrafe's real text almost always has more distinct material to
+   draw from, so this replacement is the default fix, not merging or
+   dropping. Only drop a slide (accepting a section below its 3-5 count,
+   with contentWarning explaining why) if the source truly has no more
+   distinct material left to replace it with.
 2. Bullet-point anomalies. A slide, card, or step that is nothing but a
    bare label or short phrase with no explanatory sentence is a red
    flag, not a valid style choice. Every card/step needs the one-sentence
