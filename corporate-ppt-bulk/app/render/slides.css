@@ -58,7 +58,9 @@
   display: flex; align-items: center; justify-content: center; color: #FFFFFF;
 }
 .slide-canvas.sec-inicio .badge svg { width: 120px; height: 120px; }
-.slide-canvas.sec-inicio .content { position: absolute; left: 830px; right: 100px; top: 0; height: 1080px; display: flex; flex-direction: column; justify-content: center; }
+/* Content is held to the top half so the HeyGen avatar's bottom-right
+   quarter of the canvas (960x540) stays clear of text. */
+.slide-canvas.sec-inicio .content { position: absolute; left: 830px; right: 100px; top: 0; height: 540px; display: flex; flex-direction: column; justify-content: center; }
 .slide-canvas.sec-inicio .kicker { font-family: "Lato", sans-serif; font-weight: 700; font-size: 64px; letter-spacing: 3px; color: #60BFB8; text-transform: uppercase; margin-bottom: 24px; }
 .slide-canvas.sec-inicio .promise { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; }
 
@@ -66,9 +68,11 @@
 .slide-canvas.sec-resumen { background: #963058; }
 .slide-canvas.sec-resumen .kicker { position: absolute; left: 72px; top: 64px; margin: 0; font-family: "Lato", sans-serif; font-weight: 700; font-size: 32px; letter-spacing: 3px; color: rgba(255,255,255,0.75); text-transform: uppercase; }
 .slide-canvas.sec-resumen .heading { color: #FFFFFF; top: 128px; font-size: 50px; }
-.slide-canvas.sec-resumen .grid { position: absolute; left: 72px; top: 266px; width: 1776px; height: 730px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-.slide-canvas.sec-resumen .grid.count-3, .slide-canvas.sec-resumen .grid.count-1 { grid-template-rows: 1fr 1fr; }
-.slide-canvas.sec-resumen .r-card { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.14); border-radius: 24px; padding: 44px 48px; display: flex; align-items: center; gap: 36px; }
+/* Single 960px-wide column (was a 1776px-wide 2x2 grid): the avatar sits
+   over the right side of this slide too, so the recap cards stack down
+   the left half instead of running under it. */
+.slide-canvas.sec-resumen .grid { position: absolute; left: 72px; top: 266px; width: 960px; height: 730px; display: grid; grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: 24px; }
+.slide-canvas.sec-resumen .r-card { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.14); border-radius: 24px; padding: 28px 40px; display: flex; align-items: center; gap: 32px; }
 .slide-canvas.sec-resumen .r-card .badge { flex: none; width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; color: #FFFFFF; }
 /* 29px -> 32px (readability floor). */
 .slide-canvas.sec-resumen .r-card p { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 32px; color: #FFFFFF; margin: 0; line-height: 1.35; }

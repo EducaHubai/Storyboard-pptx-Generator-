@@ -47,10 +47,21 @@ from pptx.enum.text import PP_ALIGN
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONTS_DIR = os.path.join(HERE, "..", "fonts")
-SLIDE_W_IN, SLIDE_H_IN = 10.0, 5.625
+# PowerPoint's standard 16:9 widescreen slide. The design canvas is
+# 1920x1080 CSS px, so this is what makes 1 CSS px = 1/144 in and the
+# design system's 32px readability floor land on its documented 16pt in
+# the .pptx. At the old 10 x 5.625in (192px/in) every slide came out at
+# 75% of a normal deck's physical size and that same floor rendered at
+# 12pt — visibly small, and smaller than any other deck in a deck folder.
+SLIDE_W_IN, SLIDE_H_IN = 13.3333333, 7.5
 PX_W, PX_H = 1920, 1080
-PX_PER_IN = PX_W / SLIDE_W_IN      # 192
-PT_PER_PX = 72.0 / PX_PER_IN       # 0.375
+PX_PER_IN = PX_W / SLIDE_W_IN      # 144
+PT_PER_PX = 72.0 / PX_PER_IN       # 0.5
+# HeyGen's translation feature turns English into Spanish, which typically
+# runs 15-30% longer — give every text box this much extra height beyond
+# what the original-language text actually needs, so the translated
+# version's extra wrapped line has room instead of getting clipped.
+_HEYGEN_TRANSLATION_HEIGHT_BUFFER = 1.3
 SCALE = 2                          # device_scale_factor for screenshots
 
 FONTS = [
@@ -109,8 +120,8 @@ def find_chrome():
     return None  # let Playwright fall back to its own resolution
 
 
-def build_html(slide, language_code="en"):
-    cls, style, inner = render_slide(slide, language_code)
+def build_html(slide):
+    cls, style, inner = render_slide(slide)
     fonts_dir = os.path.abspath(FONTS_DIR)
     slides_css = open(os.path.join(HERE, "slides.css"), encoding="utf-8").read()
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
@@ -135,10 +146,10 @@ def first_family(css_family):
     return css_family.split(",")[0].strip().strip('"').strip("'")
 
 
-def capture_slide(page, slide, tmp_dir, index, language_code="en"):
+def capture_slide(page, slide, tmp_dir, index):
     html_path = os.path.join(tmp_dir, f"slide-{index}.html")
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(build_html(slide, language_code))
+        f.write(build_html(slide))
     page.goto(f"file://{html_path}")
     page.wait_for_timeout(60)  # let @font-face finish applying
     text_boxes = page.evaluate(EXTRACT_JS)
@@ -147,7 +158,7 @@ def capture_slide(page, slide, tmp_dir, index, language_code="en"):
     return img_path, text_boxes
 
 
-def assemble_pptx(plan, tmp_dir, out_path, language_code="en"):
+def assemble_pptx(plan, tmp_dir, out_path):
     prs = Presentation()
     prs.slide_width = Emu(int(SLIDE_W_IN * 914400))
     prs.slide_height = Emu(int(SLIDE_H_IN * 914400))
@@ -162,14 +173,15 @@ def assemble_pptx(plan, tmp_dir, out_path, language_code="en"):
         page = browser.new_page(viewport={"width": PX_W, "height": PX_H}, device_scale_factor=SCALE)
 
         for i, slide_data in enumerate(plan["slides"]):
-            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i, language_code)
+            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i)
             slide = prs.slides.add_slide(prs.slide_layouts[6])
             slide.shapes.add_picture(img_path, Inches(0), Inches(0), Inches(SLIDE_W_IN), Inches(SLIDE_H_IN))
 
             for box in text_boxes:
                 tb = slide.shapes.add_textbox(
                     Inches(box["left"] / PX_PER_IN), Inches(box["top"] / PX_PER_IN),
-                    Inches(box["width"] / PX_PER_IN), Inches(box["height"] / PX_PER_IN),
+                    Inches(box["width"] / PX_PER_IN),
+                    Inches(box["height"] * _HEYGEN_TRANSLATION_HEIGHT_BUFFER / PX_PER_IN),
                 )
                 tf = tb.text_frame
                 tf.word_wrap = True

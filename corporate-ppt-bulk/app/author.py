@@ -13,11 +13,12 @@ rules Structured Outputs can't express (slide counts, no-repeat-variant),
 and a single retry is attempted with those errors fed back to the model
 before giving up.
 
-Chrome labels ("Conceptos"/"Concepts", "Resumen"/"Summary",
-"MITO"/"MYTH", etc.) are translated separately, in
-render/templates.py's CHROME_LABELS, keyed by the job's detected/explicit
-language_code (jobs.create_job) — this module only controls the slide
-*content* (titles, promises, card text, steps) via `language`.
+Chrome labels ("Conceptos"/"Concepts", "Resumen"/"Summary", "MITO"/"MYTH",
+etc.) are field-driven, same as the corporate-ppt Skill: the model sets
+`kicker`/`section_label`/`myth_label`/`reality_label` on the relevant
+slides' `fields` per `language` below (render/templates.py falls back to
+the Spanish chrome defaults — "Inicio", "Conceptos", "MITO", etc. — only
+if a field comes back empty).
 """
 from __future__ import annotations
 
@@ -60,10 +61,15 @@ avatar in HeyGen.
 
 ## Rules
 
-- Total slides: 12-15. If the épigrafe's real content can't fill 12 slides
-  even at minimum density, set `totalSlides` as low as honestly supported
-  and set `contentWarning` explaining why — never pad with filler to hit
-  the count.
+- Total slides: 12-15, and that is the normal outcome — any épigrafe with
+  a few real paragraphs of source text holds 12-15 slides once each
+  distinct point gets its own slide. Only when the source is genuinely
+  tiny (a handful of sentences, with no distinct points left to give a
+  slide of its own) may you go lower: then set `totalSlides` as low as
+  honestly supported and set `contentWarning` explaining why. Never pad
+  with filler to hit the count — but equally, never use `contentWarning`
+  to hand back a short deck for an épigrafe that does have the material
+  (it is rejected and sent back to you when the source is rich enough).
 - Six sections in fixed order: `titulo` (1) — `inicio` (1) — `concepto`
   (3-5) — `puntos_clave` (3-5) — `resumen` (1) — `cierre` (1). Conceptos +
   Puntos Clave combined must total 8-11 slides (e.g. 4+4, 5+4, 5+5 — not
@@ -77,11 +83,19 @@ avatar in HeyGen.
 - Every slide's content must come from the real source text provided — no
   invented facts, no placeholder text.
 - Write all slide content (titles, promise, card text, steps, myth/reality
-  rows) in: {language}. (Chrome labels like "Conceptos"/"Resumen" are
-  translated separately by the render engine, keyed off the job's
-  language — you don't need to account for them here.)
+  rows) in: {language}.
 - `cierre.fields.title` is a short closing phrase equivalent to "Thank
   you", written in {language}.
+- Chrome labels are per-slide fields, not auto-translated for you — set
+  each one explicitly to real {language} text: `inicio.fields.kicker`
+  (Spanish default "Inicio"), `resumen.fields.kicker` (Spanish default
+  "Resumen"), every `concepto`/`puntos_clave` slide's
+  `fields.section_label` (Spanish defaults "Conceptos"/"Puntos Clave"),
+  and `mito_realidad`'s `fields.myth_label`/`fields.reality_label`
+  (Spanish defaults "MITO"/"REALIDAD"). For a Spanish deck, repeat these
+  Spanish defaults verbatim; for any other {language}, translate them for
+  real — never leave a Spanish word sitting in an otherwise-{language}
+  deck. They render in full caps either way, so write them in normal case.
 - `titulo` and `inicio` never show the epígrafe's number/prefix, even if
   the source writes the title that way (e.g. source says "3. Fundamentos
   de..." — the `titulo` slide's title just says "Fundamentos de..."). The
@@ -208,22 +222,37 @@ def _call_openai(system_prompt: str, user_message: str, model: str) -> dict:
             time.sleep(wait_s + 0.5)  # small buffer past what OpenAI asked for
 
 
+_MIN_SOURCE_CHARS = 200
+
+
 def generate_plan(epigrafe: dict, unit_meta: dict, language: str = "English", model: str | None = None) -> dict:
     """Generates + validates one épigrafe's plan.json, retrying once with
     the validation errors fed back to the model if the first pass fails
     schema.validate_plan()'s cross-field checks. Raises AuthorError if
     both attempts fail."""
     model = model or OPENAI_MODEL
+    source = (epigrafe.get("texto") or "").strip()
+    if len(source) < _MIN_SOURCE_CHARS:
+        # Without this the model dutifully obeys "never invent content" and
+        # returns a structurally valid plan whose every text field is an
+        # empty string — a deck that ships looking completely blank. Fail
+        # the task instead, pointing at the real problem (extraction), and
+        # leave it retryable once the parsing is fixed.
+        raise AuthorError(
+            f"épigrafe {epigrafe.get('codigo')} has almost no source text "
+            f"({len(source)} characters) — the PDF parser couldn't extract its content, so "
+            f"there's nothing to build a deck from. Check the document's structure/headings."
+        )
     system_prompt = _build_system_prompt(language)
 
     plan = _call_openai(system_prompt, _build_user_message(epigrafe, unit_meta, None), model)
-    errors = schema.validate_plan(plan)
+    errors = schema.validate_plan(plan, source_chars=len(source))
     if not errors:
         return plan
 
     retry_message = _build_user_message(epigrafe, unit_meta, errors)
     plan = _call_openai(system_prompt, retry_message, model)
-    errors = schema.validate_plan(plan)
+    errors = schema.validate_plan(plan, source_chars=len(source))
     if errors:
         raise AuthorError(
             f"plan.json for épigrafe {epigrafe.get('codigo')} still invalid after retry: {'; '.join(errors)}"

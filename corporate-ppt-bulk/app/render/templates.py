@@ -8,32 +8,9 @@ import html
 from icons import icon_svg
 
 SECTION_META = {
-    "concepto":     {"accent": "#244A80", "tint": "rgba(36,74,128,0.08)",  "shadow": "rgba(36,74,128,0.22)"},
-    "puntos_clave": {"accent": "#2E7ABE", "tint": "rgba(46,122,190,0.08)", "shadow": "rgba(46,122,190,0.22)"},
+    "concepto":     {"label": "Conceptos",    "accent": "#244A80", "tint": "rgba(36,74,128,0.08)",  "shadow": "rgba(36,74,128,0.22)"},
+    "puntos_clave": {"label": "Puntos Clave", "accent": "#2E7ABE", "tint": "rgba(46,122,190,0.08)", "shadow": "rgba(46,122,190,0.22)"},
 }
-
-# Chrome labels — everything the render engine adds on top of the LLM's own
-# (already-translated, see author.py) slide content: kickers, section
-# labels, and the mito/realidad row labels. Keyed by the job's
-# language_code (see jobs.create_job); unrecognized codes fall back to
-# English rather than silently staying Spanish regardless of the source
-# document's real language.
-CHROME_LABELS = {
-    "es": {
-        "concepto": "Conceptos", "puntos_clave": "Puntos Clave",
-        "inicio": "Inicio", "resumen": "Resumen",
-        "mito": "MITO", "realidad": "REALIDAD", "gracias": "Gracias",
-    },
-    "en": {
-        "concepto": "Concepts", "puntos_clave": "Key Points",
-        "inicio": "Intro", "resumen": "Summary",
-        "mito": "MYTH", "realidad": "REALITY", "gracias": "Thank you",
-    },
-}
-
-
-def _labels(language_code):
-    return CHROME_LABELS.get((language_code or "en")[:2].lower(), CHROME_LABELS["en"])
 
 VARIANT_CLASS = {
     "numero_hero": "v-numero-hero",
@@ -58,38 +35,41 @@ def render_titulo(slide):
     return f'<div class="top-line"></div><div class="big-title pptx-text">{esc(slide["fields"].get("title"))}</div>'
 
 
-def render_cierre(slide, labels):
-    title = slide["fields"].get("title") or labels["gracias"]
+def render_cierre(slide):
+    title = slide["fields"].get("title") or "Thank you"
     return f'<div class="big-title pptx-text">{esc(title)}</div><div class="bottom-line"></div>'
 
 
-def render_inicio(slide, labels):
+def render_inicio(slide):
     icon = slide["fields"].get("icon", "lightbulb")
     promise = slide["fields"].get("promise", "")
+    kicker = slide["fields"].get("kicker") or "Inicio"
     return f"""
     <div class="panel"><div class="badge">{icon_svg(icon, 110)}</div></div>
     <div class="content">
-      <p class="kicker pptx-text">{esc(labels["inicio"])}</p>
+      <p class="kicker pptx-text">{esc(kicker)}</p>
       <p class="promise pptx-text">{esc(promise)}</p>
     </div>
     <div class="gradient-bar"></div>"""
 
 
-def render_resumen(slide, labels):
+def render_resumen(slide):
     items = [i for i in (slide["fields"].get("items") or []) if i]
+    kicker = slide["fields"].get("kicker") or "Resumen"
     cards = "".join(f"""
         <div class="r-card">
           <div class="badge">{icon_svg(it.get("icon"), 46)}</div>
           <p class="pptx-text">{esc(it.get("text"))}</p>
         </div>""" for it in items)
     return f"""
-    <p class="kicker pptx-text">{esc(labels["resumen"])}</p>
+    <p class="kicker pptx-text">{esc(kicker)}</p>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="grid count-{len(items)}">{cards}</div>"""
 
 
 def render_numero_hero(slide, meta):
     cards = [c for c in (slide["fields"].get("cards") or []) if c]
+    label = slide["fields"].get("section_label") or meta["label"]
     cards_html = "".join(f"""
         <div class="card">
           <div class="badge">{icon_svg(c.get("icon"), 56)}</div>
@@ -98,7 +78,7 @@ def render_numero_hero(slide, meta):
     return f"""
     <div class="glow"></div>
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{esc(label)}</span></div>
     <div class="hero-number">{esc(slide["fields"].get("number") or "01")}</div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="rule"></div>
@@ -109,6 +89,7 @@ def render_numero_hero(slide, meta):
 def render_tarjeta_destacada(slide, meta):
     main = slide["fields"].get("main") or {}
     secondary = [s for s in (slide["fields"].get("secondary") or []) if s]
+    label = slide["fields"].get("section_label") or meta["label"]
     sec_html = "".join(f"""
           <div class="sec-card">
             <div class="badge">{icon_svg(s.get("icon"), 30)}</div>
@@ -116,7 +97,7 @@ def render_tarjeta_destacada(slide, meta):
           </div>""" for s in secondary)
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{esc(label)}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="row">
       <div class="main-card">
@@ -131,20 +112,23 @@ def render_tarjeta_destacada(slide, meta):
 
 def render_mito_realidad(slide, meta):
     rows = [r for r in (slide["fields"].get("rows") or []) if r]
+    label = slide["fields"].get("section_label") or meta["label"]
+    myth_label = slide["fields"].get("myth_label") or "MITO"
+    reality_label = slide["fields"].get("reality_label") or "REALIDAD"
     rows_html = "".join(f"""
         <div class="row">
           <div class="col myth">
             <div class="badge">{icon_svg("warning", 28)}</div>
-            <div><p class="lbl">{esc(meta["mito"])}</p><p class="txt pptx-text">{esc(r.get("myth"))}</p></div>
+            <div><p class="lbl">{esc(myth_label)}</p><p class="txt pptx-text">{esc(r.get("myth"))}</p></div>
           </div>
           <div class="col reality">
             <div class="badge">{icon_svg("check_circle", 28)}</div>
-            <div><p class="lbl">{esc(meta["realidad"])}</p><p class="txt pptx-text">{esc(r.get("reality"))}</p></div>
+            <div><p class="lbl">{esc(reality_label)}</p><p class="txt pptx-text">{esc(r.get("reality"))}</p></div>
           </div>
         </div>""" for r in rows)
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{esc(label)}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="rows">{rows_html}</div>
     <div class="gradient-bar"></div>"""
@@ -152,6 +136,7 @@ def render_mito_realidad(slide, meta):
 
 def render_flujo_pasos(slide, meta):
     steps = [s for s in (slide["fields"].get("steps") or []) if s]
+    label = slide["fields"].get("section_label") or meta["label"]
     arrow = ('<svg width="44" height="22" viewBox="0 0 48 24">'
              '<path d="M2 12 H40 M32 4 L42 12 L32 20" stroke="currentColor" stroke-width="3" '
              'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -168,7 +153,7 @@ def render_flujo_pasos(slide, meta):
         </div>""")
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{esc(label)}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="flow">{"".join(parts)}</div>
     <div class="gradient-bar"></div>"""
@@ -176,6 +161,7 @@ def render_flujo_pasos(slide, meta):
 
 def render_panel_tarjetas(slide, meta):
     cards = [c for c in (slide["fields"].get("cards") or []) if c]
+    label = slide["fields"].get("section_label") or meta["label"]
     cards_html = "".join(f"""
         <div class="stack-card">
           <div class="badge">{icon_svg(c.get("icon"), 34)}</div>
@@ -183,7 +169,7 @@ def render_panel_tarjetas(slide, meta):
         </div>""" for c in cards)
     return f"""
     <div class="side-panel"><div class="ring">{icon_svg(slide["fields"].get("icon"), 90)}</div></div>
-    <div class="section-label" style="left:700px;"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label" style="left:700px;"><div class="dot"></div><span class="pptx-text">{esc(label)}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="stack">{cards_html}</div>
     <div class="gradient-bar"></div>"""
@@ -198,25 +184,24 @@ VARIANT_RENDERERS = {
 }
 
 
-def render_slide(slide, language_code="en"):
+def render_slide(slide):
     """Returns (css_class, style_attr, inner_html) for one slide dict:
-    {section, variant, fields, notes}. `language_code` (an ISO 639-1 code,
-    e.g. "en"/"es" — see jobs.create_job) picks which CHROME_LABELS
-    translation the render engine's own chrome text uses; it's independent
-    of the slide content's own language, which author.py already writes
-    directly in the target language."""
-    labels = _labels(language_code)
+    {section, variant, fields, notes}. Chrome labels (kicker, section
+    labels, mito/realidad row labels) are field-driven — author.py's LLM
+    sets them per job.language, falling back to the Spanish chrome
+    defaults hardcoded here (matching the corporate-ppt Skill's own
+    defaults) when a field comes back empty."""
     section = slide["section"]
     if section == "titulo":
         return "sec-titulo", "", render_titulo(slide)
     if section == "cierre":
-        return "sec-cierre", "", render_cierre(slide, labels)
+        return "sec-cierre", "", render_cierre(slide)
     if section == "inicio":
-        return "sec-inicio", "", render_inicio(slide, labels)
+        return "sec-inicio", "", render_inicio(slide)
     if section == "resumen":
-        return "sec-resumen", "", render_resumen(slide, labels)
+        return "sec-resumen", "", render_resumen(slide)
 
-    meta = dict(SECTION_META[section], label=labels[section], mito=labels["mito"], realidad=labels["realidad"])
+    meta = SECTION_META[section]
     variant = slide.get("variant") or "numero_hero"
     renderer = VARIANT_RENDERERS[variant]
     cls = f"sec-{section} {VARIANT_CLASS[variant]} card-shadow"

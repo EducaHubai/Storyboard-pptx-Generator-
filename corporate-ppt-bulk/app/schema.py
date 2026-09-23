@@ -56,10 +56,15 @@ _TITULO_FIELDS = {
     "required": ["title"],
     "additionalProperties": False,
 }
+# `kicker` is the small label above the promise/heading text ("Intro" on
+# inicio, "Resumen" on resumen by chrome default — see render/templates.py)
+# — required (Structured Outputs strict mode can't make a field truly
+# optional), but the model is told to just repeat the chrome default for a
+# Spanish deck and only actually translate it otherwise.
 _INICIO_FIELDS = {
     "type": "object",
-    "properties": {"icon": _ICON_FIELD, "promise": {"type": "string"}},
-    "required": ["icon", "promise"],
+    "properties": {"icon": _ICON_FIELD, "promise": {"type": "string"}, "kicker": {"type": "string"}},
+    "required": ["icon", "promise", "kicker"],
     "additionalProperties": False,
 }
 _RESUMEN_FIELDS = {
@@ -67,8 +72,9 @@ _RESUMEN_FIELDS = {
     "properties": {
         "title": {"type": "string"},
         "items": {"type": "array", "items": _icon_card()},
+        "kicker": {"type": "string"},
     },
-    "required": ["title", "items"],
+    "required": ["title", "items", "kicker"],
     "additionalProperties": False,
 }
 # No language enum-lock on cierre's title here (unlike the single-language
@@ -81,6 +87,10 @@ _CIERRE_FIELDS = {
     "additionalProperties": False,
 }
 
+# `section_label` is the "Conceptos"/"Puntos Clave" chip shown on every
+# concepto/puntos_clave slide regardless of variant — same
+# repeat-the-default-or-translate-it rule as `kicker` above. `mito_realidad`
+# additionally carries `myth_label`/`reality_label` ("MITO"/"REALIDAD").
 _VARIANT_FIELDS = {
     "numero_hero": {
         "type": "object",
@@ -88,8 +98,9 @@ _VARIANT_FIELDS = {
             "number": {"type": "string"},
             "title": {"type": "string"},
             "cards": {"type": "array", "items": _icon_card()},
+            "section_label": {"type": "string"},
         },
-        "required": ["number", "title", "cards"],
+        "required": ["number", "title", "cards", "section_label"],
         "additionalProperties": False,
     },
     "tarjeta_destacada": {
@@ -107,8 +118,9 @@ _VARIANT_FIELDS = {
                 "additionalProperties": False,
             },
             "secondary": {"type": "array", "items": _icon_card()},
+            "section_label": {"type": "string"},
         },
-        "required": ["title", "main", "secondary"],
+        "required": ["title", "main", "secondary", "section_label"],
         "additionalProperties": False,
     },
     "mito_realidad": {
@@ -124,8 +136,11 @@ _VARIANT_FIELDS = {
                     "additionalProperties": False,
                 },
             },
+            "section_label": {"type": "string"},
+            "myth_label": {"type": "string"},
+            "reality_label": {"type": "string"},
         },
-        "required": ["title", "rows"],
+        "required": ["title", "rows", "section_label", "myth_label", "reality_label"],
         "additionalProperties": False,
     },
     "flujo_pasos": {
@@ -133,8 +148,9 @@ _VARIANT_FIELDS = {
         "properties": {
             "title": {"type": "string"},
             "steps": {"type": "array", "items": _icon_card({"title": {"type": "string"}})},
+            "section_label": {"type": "string"},
         },
-        "required": ["title", "steps"],
+        "required": ["title", "steps", "section_label"],
         "additionalProperties": False,
     },
     "panel_tarjetas": {
@@ -143,8 +159,9 @@ _VARIANT_FIELDS = {
             "icon": _ICON_FIELD,
             "title": {"type": "string"},
             "cards": {"type": "array", "items": _icon_card()},
+            "section_label": {"type": "string"},
         },
-        "required": ["icon", "title", "cards"],
+        "required": ["icon", "title", "cards", "section_label"],
         "additionalProperties": False,
     },
 }
@@ -229,11 +246,27 @@ def _find_icons(fields):
     return found
 
 
-def validate_plan(plan: dict) -> list[str]:
+# Below this much real source text, an épigrafe genuinely may not support
+# a full 12-15 slide deck, and `contentWarning` is allowed to stand in for
+# the missing slides. At or above it there IS enough material, so the
+# warning stops being an accepted excuse for a short deck — the model
+# leaning on it there is what made rich épigrafes come back as 8-9 slide
+# decks. Roughly: 12 slides at the design system's ~20-visible-words cap
+# is ~250 words of slide text, so a source under ~2000 chars (~330 words)
+# is the honest "too thin" case.
+_MIN_CHARS_FOR_FULL_DECK = 2000
+
+
+def validate_plan(plan: dict, source_chars: int | None = None) -> list[str]:
     """Returns a list of human-readable error strings; empty list means
     the plan is valid. Structured Outputs already guarantees shape/enums
     when author.py uses it, so most of what's checked here is the
-    cross-field rules that a per-object JSON Schema can't express."""
+    cross-field rules that a per-object JSON Schema can't express.
+
+    `source_chars` is how much real source text the épigrafe had; pass it
+    so a `contentWarning` on a content-rich épigrafe can't buy a short
+    deck (see _MIN_CHARS_FOR_FULL_DECK). Omit it to keep the old
+    behaviour, where any contentWarning relaxes the slide counts."""
     errors = []
 
     if not isinstance(plan, dict):
@@ -286,6 +319,14 @@ def validate_plan(plan: dict) -> list[str]:
     n_concepto = len(by_section.get("concepto", []))
     n_puntos = len(by_section.get("puntos_clave", []))
     content_warning = plan.get("contentWarning")
+    source_is_rich = source_chars is not None and source_chars >= _MIN_CHARS_FOR_FULL_DECK
+    if content_warning and source_is_rich:
+        errors.append(
+            f"contentWarning was set, but this épigrafe has {source_chars} characters of real "
+            f"source text — enough for a full 12-15 slide deck. Drop contentWarning and build "
+            f"the full deck from the source you were given (distinct points, not padding)."
+        )
+        content_warning = None  # hold this plan to the full slide counts below
 
     if not content_warning:
         # Full 12-15 rule only enforced when the model hasn't explicitly

@@ -69,11 +69,6 @@ _LANGUAGE_NAMES = {
     "de": "German", "it": "Italian", "ca": "Catalan", "eu": "Basque",
     "gl": "Galician", "nl": "Dutch",
 }
-# Reverse lookup for jobs.create_job: when the caller passes an explicit
-# `language` override (e.g. "Spanish") instead of accepting the detected
-# default, the chrome-label language (render/templates.py) should follow
-# that override too, not the source document's own detected code.
-LANGUAGE_CODE_BY_NAME = {name.lower(): code for code, name in _LANGUAGE_NAMES.items()}
 
 
 def _detect_language(text: str) -> tuple[str, str]:
