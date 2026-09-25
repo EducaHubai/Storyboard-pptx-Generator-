@@ -609,6 +609,42 @@ def _generic_toc_body_floor(text: str, modulos_in: list) -> int:
     return second_hit[0] if second_hit else 0
 
 
+_MIN_HEADING_GAP = 120
+
+
+def _relocate_thin_headings(text: str, entries: list[dict], all_starts: list[int], max_passes: int = 4) -> None:
+    """The leading Table-of-Contents/Índice block is one place a heading's
+    *first* verbatim occurrence can land on a listing entry instead of its
+    real body heading (handled by `_generic_toc_body_floor`'s one-shot
+    floor) — but it isn't the only one. A unit's own "in this unit"
+    recap, a running mini-index repeated per module, or any other place
+    the same heading text appears twice can make a LATER épigrafe's
+    search land on a listing entry too, the same way: back-to-back
+    headings with almost no real content between them. Detect that
+    generically — an épigrafe whose slice to the next known heading is
+    suspiciously thin — and relocate it to the next verbatim occurrence
+    of its own title, which is where the real body heading actually is.
+    Runs to a fixed point since relocating one heading can reveal that
+    its neighbor is now the thin one (e.g. both still inside the same
+    listing block)."""
+    for _ in range(max_passes):
+        changed = False
+        positions = sorted(all_starts)
+        for e in entries:
+            next_boundary = next((p for p in positions if p > e["start"]), len(text))
+            if next_boundary - e["end"] >= _MIN_HEADING_GAP:
+                continue
+            later = _find_verbatim(text, e["titulo"], e["end"] + 1)
+            if not later or later[0] == e["start"]:
+                continue
+            all_starts.remove(e["start"])
+            e["start"], e["end"] = later
+            all_starts.append(e["start"])
+            changed = True
+        if not changed:
+            break
+
+
 def _parse_generic_via_llm(text: str) -> dict:
     structure = _extract_structure_via_llm(text)
     modulos_in = structure.get("modulos") or []
@@ -620,11 +656,14 @@ def _parse_generic_via_llm(text: str) -> dict:
         )
 
     running_header = structure.get("running_header")
-    # Flat list of every accepted heading's start position (any level) —
-    # used so each épigrafe's content stops at the very next heading of
-    # ANY kind, not just the next épigrafe, so it never bleeds into the
-    # next unit's or module's material.
+    # Every accepted heading (any level — module/unit/épigrafe), matched
+    # sequentially from a monotonically-advancing cursor. `entries` holds
+    # the épigrafe ones (what we actually need content for); `all_starts`
+    # holds every level's start position, since content for one épigrafe
+    # must stop at the very next heading of ANY kind, not just the next
+    # épigrafe.
     all_starts: list[int] = []
+    entries: list[dict] = []  # {"title", "start", "end", ...back-refs}
     cursor = _generic_toc_body_floor(text, modulos_in)
     modulos_out = []
 
@@ -654,13 +693,16 @@ def _parse_generic_via_llm(text: str) -> dict:
                     continue
                 all_starts.append(pos[0])
                 cursor = pos[1]
-                epi_raw.append({"titulo": title, "start": pos[0], "end": pos[1]})
+                entry = {"titulo": title, "start": pos[0], "end": pos[1]}
+                entries.append(entry)
+                epi_raw.append(entry)
             if epi_raw:
                 unidades_out.append({"unidad": u.get("unidad"), "nombre": u_name or f"Unit {u.get('unidad')}", "_raw": epi_raw})
         if unidades_out:
             code = _validated_module_code(m.get("modulo"), m_name, idx)
             modulos_out.append({"modulo": code, "nombre": m_name, "unidades": unidades_out})
 
+    _relocate_thin_headings(text, entries, all_starts)
     all_starts.sort()
 
     def _next_boundary_after(pos: int) -> int:
