@@ -120,8 +120,8 @@ def find_chrome():
     return None  # let Playwright fall back to its own resolution
 
 
-def build_html(slide):
-    cls, style, inner = render_slide(slide)
+def build_html(slide, language=None):
+    cls, style, inner = render_slide(slide, language)
     fonts_dir = os.path.abspath(FONTS_DIR)
     slides_css = open(os.path.join(HERE, "slides.css"), encoding="utf-8").read()
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
@@ -146,10 +146,10 @@ def first_family(css_family):
     return css_family.split(",")[0].strip().strip('"').strip("'")
 
 
-def capture_slide(page, slide, tmp_dir, index):
+def capture_slide(page, slide, tmp_dir, index, language=None):
     html_path = os.path.join(tmp_dir, f"slide-{index}.html")
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(build_html(slide))
+        f.write(build_html(slide, language))
     page.goto(f"file://{html_path}")
     page.wait_for_timeout(60)  # let @font-face finish applying
     text_boxes = page.evaluate(EXTRACT_JS)
@@ -158,7 +158,7 @@ def capture_slide(page, slide, tmp_dir, index):
     return img_path, text_boxes
 
 
-def assemble_pptx(plan, tmp_dir, out_path):
+def assemble_pptx(plan, tmp_dir, out_path, language=None):
     prs = Presentation()
     prs.slide_width = Emu(int(SLIDE_W_IN * 914400))
     prs.slide_height = Emu(int(SLIDE_H_IN * 914400))
@@ -173,7 +173,7 @@ def assemble_pptx(plan, tmp_dir, out_path):
         page = browser.new_page(viewport={"width": PX_W, "height": PX_H}, device_scale_factor=SCALE)
 
         for i, slide_data in enumerate(plan["slides"]):
-            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i)
+            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i, language)
             slide = prs.slides.add_slide(prs.slide_layouts[6])
             slide.shapes.add_picture(img_path, Inches(0), Inches(0), Inches(SLIDE_W_IN), Inches(SLIDE_H_IN))
 

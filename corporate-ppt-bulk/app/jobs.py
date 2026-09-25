@@ -515,7 +515,7 @@ def _render_one_task(task: dict, language: str, model: str | None, deck_path: st
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         out_path = os.path.join(tmp_dir, "deck.pptx")
-        render_engine.assemble_pptx(plan, tmp_dir, out_path)
+        render_engine.assemble_pptx(plan, tmp_dir, out_path, language=language)
         try:
             render_engine.embed_fonts(out_path)
         except Exception as font_err:  # non-fatal: ship without embedded fonts

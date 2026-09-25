@@ -64,7 +64,7 @@
    the flex flow so it doesn't shift the vertically-centered promise text
    below it. */
 .slide-canvas.sec-inicio .kicker { position: absolute; top: 64px; left: 0; margin: 0; font-family: "Lato", sans-serif; font-weight: 700; font-size: 64px; letter-spacing: 3px; color: #60BFB8; text-transform: uppercase; }
-.slide-canvas.sec-inicio .promise { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; }
+.slide-canvas.sec-inicio .promise { font-family: "Roboto", sans-serif; font-weight: 700; font-size: 54px; color: #202020; line-height: 1.3; margin: 0; max-width: 720px; }
 
 /* —— Resumen : Burdeos recap grid —— */
 .slide-canvas.sec-resumen { background: #963058; }

@@ -20,6 +20,27 @@ VARIANT_CLASS = {
     "panel_tarjetas": "v-panel",
 }
 
+# Fallback-only chrome text, used when the model's `fields.kicker` comes
+# back empty — author.py's prompt asks it to always set real, translated
+# text there, but a strict-schema required field can still come back as
+# "" if the model doesn't follow that instruction, so this needs to match
+# the job's actual document language rather than always assuming Spanish.
+_KICKER_DEFAULTS = {
+    "English": ("Intro", "Summary"),
+    "Spanish": ("Inicio", "Resumen"),
+    "Portuguese": ("Início", "Resumo"),
+    "French": ("Introduction", "Résumé"),
+    "German": ("Einführung", "Zusammenfassung"),
+    "Italian": ("Introduzione", "Riepilogo"),
+    "Catalan": ("Inici", "Resum"),
+    "Galician": ("Inicio", "Resumo"),
+    "Dutch": ("Intro", "Samenvatting"),
+}
+
+
+def _kicker_defaults(language):
+    return _KICKER_DEFAULTS.get(language or "", _KICKER_DEFAULTS["English"])
+
 
 def esc(s):
     return html.escape(s or "", quote=False)
@@ -40,10 +61,10 @@ def render_cierre(slide):
     return f'<div class="big-title pptx-text">{esc(title)}</div><div class="bottom-line"></div>'
 
 
-def render_inicio(slide):
+def render_inicio(slide, language=None):
     icon = slide["fields"].get("icon", "lightbulb")
     promise = slide["fields"].get("promise", "")
-    kicker = slide["fields"].get("kicker") or "Inicio"
+    kicker = slide["fields"].get("kicker") or _kicker_defaults(language)[0]
     return f"""
     <div class="panel"><div class="badge">{icon_svg(icon, 110)}</div></div>
     <div class="content">
@@ -53,9 +74,9 @@ def render_inicio(slide):
     <div class="gradient-bar"></div>"""
 
 
-def render_resumen(slide):
+def render_resumen(slide, language=None):
     items = [i for i in (slide["fields"].get("items") or []) if i]
-    kicker = slide["fields"].get("kicker") or "Resumen"
+    kicker = slide["fields"].get("kicker") or _kicker_defaults(language)[1]
     cards = "".join(f"""
         <div class="r-card">
           <div class="badge">{icon_svg(it.get("icon"), 46)}</div>
@@ -184,22 +205,22 @@ VARIANT_RENDERERS = {
 }
 
 
-def render_slide(slide):
+def render_slide(slide, language=None):
     """Returns (css_class, style_attr, inner_html) for one slide dict:
     {section, variant, fields, notes}. Chrome labels (kicker, section
     labels, mito/realidad row labels) are field-driven — author.py's LLM
-    sets them per job.language, falling back to the Spanish chrome
-    defaults hardcoded here (matching the corporate-ppt Skill's own
-    defaults) when a field comes back empty."""
+    sets them per job.language, falling back to `language`'s chrome
+    defaults (matching the corporate-ppt Skill's own defaults, per
+    language) only when a field comes back empty."""
     section = slide["section"]
     if section == "titulo":
         return "sec-titulo", "", render_titulo(slide)
     if section == "cierre":
         return "sec-cierre", "", render_cierre(slide)
     if section == "inicio":
-        return "sec-inicio", "", render_inicio(slide)
+        return "sec-inicio", "", render_inicio(slide, language)
     if section == "resumen":
-        return "sec-resumen", "", render_resumen(slide)
+        return "sec-resumen", "", render_resumen(slide, language)
 
     meta = SECTION_META[section]
     variant = slide.get("variant") or "numero_hero"
