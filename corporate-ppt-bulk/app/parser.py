@@ -574,6 +574,41 @@ def _strip_generic_noise(chunk: str, running_header: str | None) -> str:
     return "\n".join(out).strip()
 
 
+_TOC_HEADING_RE = re.compile(r"^(table of contents|índice|indice|index)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _generic_toc_body_floor(text: str, modulos_in: list) -> int:
+    """If the document has a "Table of Contents"/"Índice" page listing
+    every heading verbatim (common outside the EDUCALLM template too),
+    `_find_verbatim`'s plain sequential-cursor search matches each
+    heading's TOC listing instead of its real body occurrence — since
+    the TOC repeats headings back-to-back with almost no text between
+    them, the "content" sliced for every épigrafe ends up empty or
+    near-empty. Detect this by locating the TOC marker and the *second*
+    occurrence of the very first heading after it (its real body
+    heading, since the first occurrence is the TOC's own listing) —
+    that position becomes the floor every subsequent search starts
+    from, so the TOC block can never be matched again."""
+    toc_match = _TOC_HEADING_RE.search(text)
+    if not toc_match or not modulos_in:
+        return 0
+
+    first_mod = modulos_in[0]
+    first_heading = (first_mod.get("nombre") or "").strip()
+    unidades0 = first_mod.get("unidades") or []
+    if unidades0:
+        first_heading = (unidades0[0].get("nombre") or "").strip() or first_heading
+
+    if not first_heading:
+        return 0
+
+    first_hit = _find_verbatim(text, first_heading, toc_match.end())
+    if not first_hit:
+        return 0
+    second_hit = _find_verbatim(text, first_heading, first_hit[1])
+    return second_hit[0] if second_hit else 0
+
+
 def _parse_generic_via_llm(text: str) -> dict:
     structure = _extract_structure_via_llm(text)
     modulos_in = structure.get("modulos") or []
@@ -590,7 +625,7 @@ def _parse_generic_via_llm(text: str) -> dict:
     # ANY kind, not just the next épigrafe, so it never bleeds into the
     # next unit's or module's material.
     all_starts: list[int] = []
-    cursor = 0
+    cursor = _generic_toc_body_floor(text, modulos_in)
     modulos_out = []
 
     for idx, m in enumerate(modulos_in, start=1):
