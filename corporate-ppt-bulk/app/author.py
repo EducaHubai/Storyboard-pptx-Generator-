@@ -13,12 +13,15 @@ rules Structured Outputs can't express (slide counts, no-repeat-variant),
 and a single retry is attempted with those errors fed back to the model
 before giving up.
 
-Chrome labels ("Conceptos"/"Concepts", "Resumen"/"Summary", "MITO"/"MYTH",
-etc.) are field-driven, same as the corporate-ppt Skill: the model sets
-`kicker`/`section_label`/`myth_label`/`reality_label` on the relevant
-slides' `fields` per `language` below (render/templates.py falls back to
-the Spanish chrome defaults — "Inicio", "Conceptos", "MITO", etc. — only
-if a field comes back empty).
+Chrome labels ("Conceptos"/"Concepts", "MITO"/"MYTH", etc.) are
+field-driven, same as the corporate-ppt Skill: the model sets
+`section_label`/`myth_label`/`reality_label` on the relevant slides'
+`fields` per `language` below (render/templates.py falls back to the
+Spanish chrome defaults — "Conceptos", "MITO", etc. — only if a field
+comes back empty). The one exception is inicio/resumen's `kicker`
+("Intro"/"Resumen") — the model isn't asked for it at all;
+render/templates.py always computes it from job.language directly, since
+leaving it to the model produced untranslated/wrong text too often.
 """
 from __future__ import annotations
 
@@ -87,15 +90,16 @@ avatar in HeyGen.
 - `cierre.fields.title` is a short closing phrase equivalent to "Thank
   you", written in {language}.
 - Chrome labels are per-slide fields, not auto-translated for you — set
-  each one explicitly to real {language} text: `inicio.fields.kicker`
-  (Spanish default "Inicio"), `resumen.fields.kicker` (Spanish default
-  "Resumen"), every `concepto`/`puntos_clave` slide's
-  `fields.section_label` (Spanish defaults "Conceptos"/"Puntos Clave"),
-  and `mito_realidad`'s `fields.myth_label`/`fields.reality_label`
-  (Spanish defaults "MITO"/"REALIDAD"). For a Spanish deck, repeat these
-  Spanish defaults verbatim; for any other {language}, translate them for
-  real — never leave a Spanish word sitting in an otherwise-{language}
-  deck. They render in full caps either way, so write them in normal case.
+  each one explicitly to real {language} text: every `concepto`/
+  `puntos_clave` slide's `fields.section_label` (Spanish defaults
+  "Conceptos"/"Puntos Clave"), and `mito_realidad`'s
+  `fields.myth_label`/`fields.reality_label` (Spanish defaults
+  "MITO"/"REALIDAD"). For a Spanish deck, repeat these Spanish defaults
+  verbatim; for any other {language}, translate them for real — never
+  leave a Spanish word sitting in an otherwise-{language} deck. They
+  render in full caps either way, so write them in normal case. (Don't
+  set a kicker on inicio/resumen — there's no such field; that chrome
+  word is computed for you from {language}.)
 - `titulo` and `inicio` never show the epígrafe's number/prefix, even if
   the source writes the title that way (e.g. source says "3. Fundamentos
   de..." — the `titulo` slide's title just says "Fundamentos de..."). The

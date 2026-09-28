@@ -56,15 +56,14 @@ _TITULO_FIELDS = {
     "required": ["title"],
     "additionalProperties": False,
 }
-# `kicker` is the small label above the promise/heading text ("Intro" on
-# inicio, "Resumen" on resumen by chrome default — see render/templates.py)
-# — required (Structured Outputs strict mode can't make a field truly
-# optional), but the model is told to just repeat the chrome default for a
-# Spanish deck and only actually translate it otherwise.
+# No `kicker` field here — it's a fixed chrome word ("Intro" on inicio,
+# "Resumen" on resumen), not real content, and render/templates.py always
+# computes it from job.language rather than trusting model output (it came
+# back wrong, untranslated, too often to leave to the model).
 _INICIO_FIELDS = {
     "type": "object",
-    "properties": {"icon": _ICON_FIELD, "promise": {"type": "string"}, "kicker": {"type": "string"}},
-    "required": ["icon", "promise", "kicker"],
+    "properties": {"icon": _ICON_FIELD, "promise": {"type": "string"}},
+    "required": ["icon", "promise"],
     "additionalProperties": False,
 }
 _RESUMEN_FIELDS = {
@@ -72,9 +71,8 @@ _RESUMEN_FIELDS = {
     "properties": {
         "title": {"type": "string"},
         "items": {"type": "array", "items": _icon_card()},
-        "kicker": {"type": "string"},
     },
-    "required": ["title", "items", "kicker"],
+    "required": ["title", "items"],
     "additionalProperties": False,
 }
 # No language enum-lock on cierre's title here (unlike the single-language

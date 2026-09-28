@@ -20,11 +20,9 @@ VARIANT_CLASS = {
     "panel_tarjetas": "v-panel",
 }
 
-# Fallback-only chrome text, used when the model's `fields.kicker` comes
-# back empty — author.py's prompt asks it to always set real, translated
-# text there, but a strict-schema required field can still come back as
-# "" if the model doesn't follow that instruction, so this needs to match
-# the job's actual document language rather than always assuming Spanish.
+# Fixed per-language chrome word for inicio/resumen's kicker — there's no
+# `fields.kicker` in the schema; this is the whole source of truth for it,
+# looked up by job.language rather than trusting model-generated text.
 _KICKER_DEFAULTS = {
     "English": ("Intro", "Summary"),
     "Spanish": ("Inicio", "Resumen"),
@@ -211,11 +209,14 @@ VARIANT_RENDERERS = {
 
 def render_slide(slide, language=None):
     """Returns (css_class, style_attr, inner_html) for one slide dict:
-    {section, variant, fields, notes}. Chrome labels (kicker, section
-    labels, mito/realidad row labels) are field-driven — author.py's LLM
-    sets them per job.language, falling back to `language`'s chrome
-    defaults (matching the corporate-ppt Skill's own defaults, per
-    language) only when a field comes back empty."""
+    {section, variant, fields, notes}. Section labels and mito/realidad
+    row labels are field-driven — author.py's LLM sets them per
+    job.language, falling back to `language`'s chrome defaults (matching
+    the corporate-ppt Skill's own defaults, per language) only when a
+    field comes back empty. inicio/resumen's kicker is the one chrome
+    label NOT field-driven — always computed from `language` directly
+    (see _kicker_defaults), since the model's own attempts at it came
+    back wrong too often."""
     section = slide["section"]
     if section == "titulo":
         return "sec-titulo", "", render_titulo(slide)
