@@ -64,7 +64,11 @@ def render_cierre(slide):
 def render_inicio(slide, language=None):
     icon = slide["fields"].get("icon", "lightbulb")
     promise = slide["fields"].get("promise", "")
-    kicker = slide["fields"].get("kicker") or _kicker_defaults(language)[0]
+    # Chrome word, not real content — the model's own attempt at it has
+    # come back wrong for non-Spanish decks more than once (untranslated
+    # or mistranslated), so always use the fixed per-language default
+    # instead of trusting slide["fields"]["kicker"].
+    kicker = _kicker_defaults(language)[0]
     return f"""
     <div class="panel"><div class="badge">{icon_svg(icon, 110)}</div></div>
     <div class="content">
@@ -76,7 +80,7 @@ def render_inicio(slide, language=None):
 
 def render_resumen(slide, language=None):
     items = [i for i in (slide["fields"].get("items") or []) if i]
-    kicker = slide["fields"].get("kicker") or _kicker_defaults(language)[1]
+    kicker = _kicker_defaults(language)[1]
     cards = "".join(f"""
         <div class="r-card">
           <div class="badge">{icon_svg(it.get("icon"), 46)}</div>
