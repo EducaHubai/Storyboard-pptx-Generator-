@@ -56,10 +56,25 @@ _PAGE_FOOTER_RE = re.compile(r"^\d+\s*/\s*\d+$")
 # Glosario/taller (workshop) sections aren't real épigrafe content — never
 # generate a deck for one, in either parser path.
 _EXCLUDED_TITLE_RE = re.compile(r"\b(glosario|glossary|taller(?:es)?|workshops?)\b", re.IGNORECASE)
+# A unit's own generic front-matter heading ("Introduction"/"Objectives",
+# optionally with a leading number the doc gave it) isn't real content
+# either — the generic LLM parser has no Índice to tell it apart from a
+# real épigrafe, so it happily proposes it as one. Left unfiltered, it
+# consumes the first codigo slot in its unit (e.g. "1.1"), pushing every
+# real épigrafe after it one index higher than its own heading's number —
+# exactly the filename/número mismatch seen in production ("1.3-1.1 How
+# is this useful..."). Anchored to the WHOLE title (not a substring) so a
+# real épigrafe like "Introduction to methodological rigor..." is never
+# caught by this.
+_FRONT_MATTER_TITLE_RE = re.compile(
+    r"^(?:\d+(?:\.\d+)*[.\-:]?\s*)?(introduction|introducci[oó]n|objectives?|objetivos?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _is_excluded_title(title: str) -> bool:
-    return bool(_EXCLUDED_TITLE_RE.search(title or ""))
+    t = (title or "").strip()
+    return bool(_EXCLUDED_TITLE_RE.search(t)) or bool(_FRONT_MATTER_TITLE_RE.match(t))
 
 
 langdetect.DetectorFactory.seed = 0  # deterministic detect() across runs
