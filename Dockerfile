@@ -18,7 +18,9 @@ WORKDIR /app
 # corporate PPT with real gradient fills (pptxgenjs has no native
 # multi-stop gradient support). "epigrafe" format additionally needs
 # Playwright + Chromium for its HTML-first renderer.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
+# ffmpeg composites the HeyGen avatar clips over the slide PNGs
+# (server/avatar-video.js).
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY server/requirements.txt ./server/
 RUN pip3 install --no-cache-dir --break-system-packages -r server/requirements.txt

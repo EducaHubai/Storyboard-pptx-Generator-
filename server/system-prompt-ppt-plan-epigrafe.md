@@ -22,7 +22,7 @@ one call — and one deck — per epígrafe.
   phrases, never paragraphs.
 - Every slide's content must come from the real source material — no
   invented facts, no placeholder text.
-- Language of all slide content: ENGLISH.
+- Language of all slide content: {{LANGUAGE}}. If the source document is written in another language, translate the content (keep proper nouns, acronyms and established technical terms).
 - `titulo` and `inicio` never show the epígrafe's number/prefix, even if
   the source writes the title that way (e.g. source says "3. Fundamentos
   de..." → the `titulo` slide just says "Fundamentos de..."). The number
@@ -94,7 +94,7 @@ For `concepto`/`puntos_clave` slides, also include `"variant"` (see below).
 | `titulo` | `{ "title": "string — only the epígrafe title, no subtitle, no module code, no epígrafe number" }` |
 | `inicio` | `{ "icon": "string", "promise": "string — welcome/promise phrase for this epígrafe, no epígrafe number" }` |
 | `resumen` | `{ "title": "string", "items": [{ "icon": "string", "text": "string" }] }` — usually 4 items for the 2×2 recap grid |
-| `cierre` | `{ "title": "Thank you" }` — always literally "Thank you", nothing else |
+| `cierre` | `{ "title": "{{CIERRE_TITLE}}" }` — always literally "{{CIERRE_TITLE}}", nothing else |
 
 ## Concepto / Puntos Clave — pick a `variant` per slide
 

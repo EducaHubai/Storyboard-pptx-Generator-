@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 
 const BRAND = {
   negro: "#202020",
@@ -27,6 +27,12 @@ const BRAND = {
 // Same-origin API — frontend and backend are served by the same Express
 // app in production, so no absolute URL or env var is needed.
 const API_BASE = "/api";
+
+// Output languages for the epigrafe flow (server: languages.js). Order = generation order.
+const LANGUAGE_OPTIONS = [
+  { code: "en", label: "English", voiceLanguage: "English" },
+  { code: "es", label: "Español", voiceLanguage: "Spanish" },
+];
 
 // Set to true only if you want to click through the UI without a live
 // backend/API key configured (useful for local UI work). In the deployed
@@ -113,7 +119,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   // ── PPT + Script handlers ─────────────────────────────────
-  const handlePdfUpload = useCallback(async (file, format) => {
+  const handlePdfUpload = useCallback(async (file, format, languages = ["en"]) => {
     setLoading(true);
     setError(null);
 
@@ -137,7 +143,7 @@ export default function App() {
         const res = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: formData });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const discovery = await res.json();
-        setPptScope({ ...discovery, file });
+        setPptScope({ ...discovery, file, languages });
         setPptScreen(PPT_SCREENS.SCOPE);
       } catch (e) {
         setError(e.message === "Failed to fetch"
@@ -178,38 +184,60 @@ export default function App() {
     const jobs = [];
     units.forEach((u) => (u.epigraphs || []).forEach((epigrafe) => jobs.push({ unit: u.unit, epigrafe })));
 
+    const languages = pptScope.languages?.length ? pptScope.languages : ["en"];
+    const langLabel = (code) => LANGUAGE_OPTIONS.find((l) => l.code === code)?.label || code;
+    const postJson = (url, body) => fetch(`${API_BASE}/${url}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    // Plan → scripts + pptx for one language.
+    const generateDeck = async (plan, fallbackName) => {
+      const genRes = await postJson("ppt-generate", { plan });
+      if (!genRes.ok) throw new Error(`Generate step failed (${genRes.status})`);
+      const educalabRaw = genRes.headers.get("X-Educalab-Meta");
+      const scriptRaw = genRes.headers.get("X-Script-Data");
+      const blob = await genRes.blob();
+      return {
+        plan,
+        educalab: educalabRaw ? JSON.parse(atob(educalabRaw)) : null,
+        scriptSlides: scriptRaw ? JSON.parse(atob(scriptRaw)) : [],
+        blobUrl: URL.createObjectURL(blob),
+        fileName: filenameFromContentDisposition(genRes.headers.get("Content-Disposition"), fallbackName),
+      };
+    };
+
     const results = [];
     for (let i = 0; i < jobs.length; i++) {
       const { unit, epigrafe } = jobs[i];
-      setBatchProgress({ current: i + 1, total: jobs.length, label: `${unit} — ${epigrafe}` });
-      try {
-        const planFormData = new FormData();
-        planFormData.append("pdf", pptScope.file);
-        planFormData.append("format", "epigrafe");
-        planFormData.append("epigrafe", epigrafe);
-        const planRes = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: planFormData });
-        if (!planRes.ok) throw new Error(`Plan step failed (${planRes.status})`);
-        const plan = await planRes.json();
-
-        const genRes = await fetch(`${API_BASE}/ppt-generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plan }),
-        });
-        if (!genRes.ok) throw new Error(`Generate step failed (${genRes.status})`);
-
-        const educalabRaw = genRes.headers.get("X-Educalab-Meta");
-        const educalab = educalabRaw ? JSON.parse(atob(educalabRaw)) : null;
-        const blob = await genRes.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const fileName = filenameFromContentDisposition(
-          genRes.headers.get("Content-Disposition"),
-          `${epigrafe}.pptx`
-        );
-
-        results.push({ unit, epigrafe, plan, educalab, blobUrl, fileName, error: null });
-      } catch (e) {
-        results.push({ unit, epigrafe, error: e.message === "Failed to fetch" ? "Could not reach the backend." : e.message });
+      const label = `${unit} — ${epigrafe}`;
+      let basePlan = null;
+      for (const language of languages) {
+        setBatchProgress({ current: i + 1, total: jobs.length, label: `${label} (${langLabel(language)})` });
+        try {
+          if (!basePlan) {
+            // First language: plan straight from the document, in that language.
+            const planFormData = new FormData();
+            planFormData.append("pdf", pptScope.file);
+            planFormData.append("format", "epigrafe");
+            planFormData.append("epigrafe", epigrafe);
+            planFormData.append("language", language);
+            const planRes = await fetch(`${API_BASE}/pdf-to-plan`, { method: "POST", body: planFormData });
+            if (!planRes.ok) throw new Error(`Plan step failed (${planRes.status})`);
+            basePlan = await planRes.json();
+            results.push({ unit, epigrafe, language, ...(await generateDeck(basePlan, `${epigrafe}.pptx`)), error: null });
+          } else {
+            // Other languages: translate the same plan so both decks line up.
+            const trRes = await postJson("translate-plan", { plan: basePlan, language });
+            if (!trRes.ok) throw new Error(`Translate step failed (${trRes.status})`);
+            const plan = await trRes.json();
+            results.push({ unit, epigrafe, language, ...(await generateDeck(plan, `${epigrafe}-${language}.pptx`)), error: null });
+          }
+        } catch (e) {
+          results.push({ unit, epigrafe, language, error: e.message === "Failed to fetch" ? "Could not reach the backend." : e.message });
+          if (!basePlan) break; // no plan → nothing to translate either
+        }
       }
     }
 
@@ -389,6 +417,7 @@ function TopBar({ screen }) {
 function UploadScreen({ onUpload, onManualSubmit, loading }) {
   const [mode, setMode] = useState("pdf"); // "pdf" | "manual"
   const [format, setFormat] = useState("standard"); // "standard" | "micro"
+  const [languages, setLanguages] = useState(["en"]); // epigrafe format only; first = plan language
   const [dragOver, setDragOver] = useState(false);
   const [unit, setUnit] = useState("");
   const [afo, setAfo] = useState("");
@@ -399,7 +428,7 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file && file.type === "application/pdf") onUpload(file, format);
+    if (file && file.type === "application/pdf") onUpload(file, format, languages);
   };
 
   const handleManualSubmit = (e) => {
@@ -472,6 +501,34 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
         </div>
       </div>
 
+      {mode === "pdf" && format === "epigrafe" && (
+        <div style={{ marginBottom: 20, textAlign: "center" }}>
+          <p style={{ ...styles.dropSubtext, marginBottom: 8 }}>Output language — slides, script and avatar voice</p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            {LANGUAGE_OPTIONS.map((l) => {
+              const active = languages.includes(l.code);
+              return (
+                <button
+                  key={l.code}
+                  style={{ ...styles.graphicChip, ...(active ? styles.graphicChipActive : {}) }}
+                  onClick={() => setLanguages((prev) => {
+                    if (!prev.includes(l.code)) return LANGUAGE_OPTIONS.map((o) => o.code).filter((c) => c === l.code || prev.includes(c));
+                    return prev.length > 1 ? prev.filter((c) => c !== l.code) : prev; // keep at least one
+                  })}
+                >
+                  {active ? "✓ " : ""}{l.label}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ ...styles.dropSubtext, marginTop: 8, fontSize: 12 }}>
+            {languages.length > 1
+              ? "Both: the deck is planned in English, then translated — same structure in each language."
+              : "Pick both to get a deck (and video) in each language."}
+          </p>
+        </div>
+      )}
+
       {mode === "pdf" ? (
         <div
           style={{
@@ -502,7 +559,7 @@ function UploadScreen({ onUpload, onManualSubmit, loading }) {
               <label style={styles.browseBtn}>
                 Browse files
                 <input type="file" accept="application/pdf" style={{ display: "none" }}
-                  onChange={(e) => e.target.files[0] && onUpload(e.target.files[0], format)} />
+                  onChange={(e) => e.target.files[0] && onUpload(e.target.files[0], format, languages)} />
               </label>
               <p style={{ ...styles.dropSubtext, marginTop: 8 }}>
                 {format === "epigrafe" ? "PDF only · one or more units" : "PDF only · max one unit per upload"}
@@ -654,6 +711,144 @@ function PptPlanScreen({ plan, onPlanChange, onBack, onApprove, loading }) {
           <span>The AI is writing the scripts and building the .pptx… (~20–40 seconds)</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Avatar video — HeyGen clips composited over the slides (server: avatar-video.js)
+────────────────────────────────────────────────────────── */
+const planVoiceLangOf = (plan) => LANGUAGE_OPTIONS.find((o) => o.code === plan.language)?.voiceLanguage || null;
+
+function AvatarVideoPanel({ plan, scriptSlides, fileBase }) {
+  const [cfg, setCfg] = useState(null); // { configured, defaultVoiceId }
+  const [voices, setVoices] = useState([]);
+  const [language, setLanguage] = useState("");
+  const [voiceId, setVoiceId] = useState("");
+  const [job, setJob] = useState(null); // { jobId, status, step, done, total, error }
+  const [error, setError] = useState(null);
+  const pollRef = useRef(null);
+
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const c = await (await fetch(`${API_BASE}/heygen/config`)).json();
+        if (cancelled) return;
+        setCfg(c);
+        if (!c.configured) return;
+        const res = await fetch(`${API_BASE}/heygen/voices`);
+        if (!res.ok) throw new Error((await res.json()).error || `Server returned ${res.status}`);
+        const list = await res.json();
+        if (cancelled) return;
+        setVoices(list);
+        const langs = [...new Set(list.map((v) => v.language))];
+        const planVoiceLang = LANGUAGE_OPTIONS.find((o) => o.code === plan.language)?.voiceLanguage;
+        const initialLang = langs.find((l) => l === planVoiceLang) || langs.find((l) => /^english/i.test(l)) || langs[0] || "";
+        setLanguage(initialLang);
+        const preset = list.find((v) => v.id === c.defaultVoiceId);
+        setVoiceId((preset || list.find((v) => v.language === initialLang) || {}).id || "");
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const languages = [...new Set(voices.map((v) => v.language))];
+  const voicesInLang = voices.filter((v) => v.language === language);
+  const chosenVoice = voices.find((v) => v.id === voiceId);
+  const running = job && job.status === "running";
+
+  const changeLanguage = (l) => {
+    setLanguage(l);
+    setVoiceId((voices.find((v) => v.language === l) || {}).id || "");
+  };
+
+  const start = async () => {
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/avatar-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan, scripts: scriptSlides, voiceId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Server returned ${res.status}`);
+      const jobId = body.jobId;
+      setJob({ jobId, status: "running", step: "Queued", done: 0, total: 0 });
+      pollRef.current = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_BASE}/avatar-video/${jobId}`);
+          const st = await r.json();
+          if (!r.ok) throw new Error(st.error || `Server returned ${r.status}`);
+          setJob({ jobId, ...st });
+          if (st.status !== "running") clearInterval(pollRef.current);
+        } catch (e) {
+          clearInterval(pollRef.current);
+          setError(e.message);
+          setJob(null);
+        }
+      }, 5000);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  if (!cfg) return null;
+  const box = { padding: "24px 28px", borderRadius: 10, border: `1px solid ${BRAND.border}`, marginBottom: 28 };
+  const label = { fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.textSecondary };
+  const field = { padding: "8px 10px", borderRadius: 6, border: `1px solid ${BRAND.border}`, fontFamily: "'Lato', sans-serif", fontSize: 13, minWidth: 180 };
+
+  return (
+    <div style={box}>
+      <div style={{ fontFamily: "'Rubik', sans-serif", fontSize: 15, fontWeight: 500, color: BRAND.negro, marginBottom: 4 }}>Avatar video</div>
+      {!cfg.configured ? (
+        <div style={label}>HeyGen is not configured on the server (set HEYGEN_API_KEY).</div>
+      ) : (
+        <>
+          <div style={{ ...label, marginBottom: 14 }}>
+            Narrated mp4: HeyGen avatar (Georgia) composited over every slide that has a script. Takes several minutes.
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label style={label}>Voice language<br />
+              <select style={field} value={language} onChange={(e) => changeLanguage(e.target.value)} disabled={running}>
+                {languages.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </label>
+            <label style={label}>Voice<br />
+              <select style={field} value={voiceId} onChange={(e) => setVoiceId(e.target.value)} disabled={running}>
+                {voicesInLang.map((v) => <option key={v.id} value={v.id}>{v.name.trim()} ({v.gender})</option>)}
+              </select>
+            </label>
+            <button style={{ ...styles.secondaryBtn, opacity: running || !voiceId ? 0.5 : 1 }} onClick={start} disabled={running || !voiceId}>
+              {running ? "Generating…" : "🎬 Generate avatar video"}
+            </button>
+          </div>
+          {chosenVoice && planVoiceLangOf(plan) && chosenVoice.language !== planVoiceLangOf(plan) && (
+            <div style={{ ...label, marginTop: 10, color: BRAND.burdeos }}>
+              This deck's script is in {planVoiceLangOf(plan)}: a {chosenVoice.language} voice will read it with that accent.
+            </div>
+          )}
+          {running && (
+            <div style={{ ...label, marginTop: 14 }}>
+              {job.step}{job.total ? ` — ${job.done}/${job.total} clips` : ""}
+            </div>
+          )}
+          {job && job.status === "done" && (
+            <div style={{ marginTop: 16 }}>
+              <a href={`${API_BASE}/avatar-video/${job.jobId}/download?name=${encodeURIComponent(fileBase)}`} style={styles.downloadBtn}>⬇ Download .mp4</a>
+              <span style={{ ...label, marginLeft: 12 }}>Available for 1 hour.</span>
+            </div>
+          )}
+          {job && job.status === "error" && (
+            <div style={{ ...label, marginTop: 14, color: BRAND.burdeos }}>Failed: {job.error}</div>
+          )}
+        </>
+      )}
+      {error && <div style={{ ...label, marginTop: 10, color: BRAND.burdeos }}>{error}</div>}
     </div>
   );
 }
@@ -869,6 +1064,12 @@ function ScopeScreen({ scope, onBack, onGenerate, loading, progress }) {
 ────────────────────────────────────────────────────────── */
 function BatchResultScreen({ results, onStartOver }) {
   const successCount = results.filter((r) => !r.error).length;
+  const [videoOpen, setVideoOpen] = useState(() => new Set());
+  const toggleVideo = (i) => setVideoOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    return next;
+  });
 
   const downloadAll = () => {
     results.forEach((r) => {
@@ -900,15 +1101,14 @@ function BatchResultScreen({ results, onStartOver }) {
               border: `1px solid ${r.error ? "rgba(233,106,105,0.4)" : BRAND.border}`,
               borderRadius: 8,
               padding: "16px 20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 16,
-              flexWrap: "wrap",
             }}
           >
+           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: "'Rubik', sans-serif", fontSize: 14, fontWeight: 500, color: BRAND.negro }}>{r.epigrafe}</div>
+              <div style={{ fontFamily: "'Rubik', sans-serif", fontSize: 14, fontWeight: 500, color: BRAND.negro }}>
+                {r.epigrafe}
+                <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 9999, background: BRAND.burdeos, color: "#FFFFFF", fontFamily: "'Lato', sans-serif", fontSize: 10, fontWeight: 700 }}>{(r.language || "en").toUpperCase()}</span>
+              </div>
               <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.unit}</div>
               {r.error && (
                 <div style={{ fontFamily: "'Lato', sans-serif", fontSize: 12, color: BRAND.rosa, marginTop: 4 }}>⚠ {r.error}</div>
@@ -920,8 +1120,17 @@ function BatchResultScreen({ results, onStartOver }) {
               )}
             </div>
             {!r.error && (
-              <a href={r.blobUrl} download={r.fileName} style={{ ...styles.downloadBtn, padding: "10px 20px", fontSize: 13 }}>⬇ Download</a>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button style={{ ...styles.secondaryBtn, padding: "10px 16px", fontSize: 13 }} onClick={() => toggleVideo(i)}>🎬 Avatar video</button>
+                <a href={r.blobUrl} download={r.fileName} style={{ ...styles.downloadBtn, padding: "10px 20px", fontSize: 13 }}>⬇ Download</a>
+              </div>
             )}
+           </div>
+           {!r.error && videoOpen.has(i) && (
+             <div style={{ marginTop: 16 }}>
+               <AvatarVideoPanel plan={r.plan} scriptSlides={r.scriptSlides} fileBase={r.fileName.replace(/\.pptx$/i, "")} />
+             </div>
+           )}
           </div>
         ))}
       </div>

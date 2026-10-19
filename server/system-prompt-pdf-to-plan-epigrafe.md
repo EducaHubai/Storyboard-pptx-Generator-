@@ -49,7 +49,7 @@ JSON.
   (see the "use when" column below), never by mechanically rotating
   through the list just to satisfy the no-repeat rule.
 - Max ~20 visible words per slide, max 3 ideas/bullets.
-- Language of all slide content: ENGLISH.
+- Language of all slide content: {{LANGUAGE}}. If the source document is written in another language, translate the content (keep proper nouns, acronyms and established technical terms).
 - `titulo` and `inicio` never show the epígrafe's number/prefix, even if
   the source writes the title that way (e.g. source says "3. Fundamentos
   de..." → the `titulo` slide just says "Fundamentos de..."). The number
@@ -113,7 +113,7 @@ Valid `section` values: `titulo`, `inicio`, `concepto`, `puntos_clave`, `resumen
 | `titulo` | `{ "title": "string — only the epígrafe title, no epígrafe number" }` |
 | `inicio` | `{ "icon": "string", "promise": "string — no epígrafe number" }` |
 | `resumen` | `{ "title": "string", "items": [{ "icon", "text" }] }` (usually 4) |
-| `cierre` | `{ "title": "Thank you" }` |
+| `cierre` | `{ "title": "{{CIERRE_TITLE}}" }` |
 
 ### Concepto / Puntos Clave — pick a `variant` per slide
 

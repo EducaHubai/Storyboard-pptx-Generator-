@@ -62,11 +62,11 @@ const RESUMEN_FIELDS = {
   additionalProperties: false,
 };
 
-// Always literally "Thank you" per the format's Step 3 rule — enum-locked
-// instead of just documented, so it can't drift.
+// Always literally "Thank you" / "Gracias" (per plan language) per the format's
+// Step 3 rule — enum-locked instead of just documented, so it can't drift.
 const CIERRE_FIELDS = {
   type: "object",
-  properties: { title: { type: "string", enum: ["Thank you"] } },
+  properties: { title: { type: "string", enum: ["Thank you", "Gracias"] } },
   required: ["title"],
   additionalProperties: false,
 };

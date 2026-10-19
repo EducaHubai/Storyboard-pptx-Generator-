@@ -12,6 +12,20 @@ SECTION_META = {
     "puntos_clave": {"label": "Puntos Clave", "accent": "#2E7ABE", "tint": "rgba(46,122,190,0.08)", "shadow": "rgba(46,122,190,0.22)"},
 }
 
+# On-slide labels per plan language. Plans without a language keep the
+# original (Spanish) labels. render.py stamps slide["_lang"] from plan["language"].
+LABELS = {
+    "es": {"inicio": "Inicio", "resumen": "Resumen", "concepto": "Conceptos",
+           "puntos_clave": "Puntos Clave", "cierre": "Gracias"},
+    "en": {"inicio": "Start", "resumen": "Summary", "concepto": "Concepts",
+           "puntos_clave": "Key Points", "cierre": "Thank you"},
+}
+
+
+def label(slide, key):
+    return LABELS.get(slide.get("_lang"), LABELS["es"])[key]
+
+
 VARIANT_CLASS = {
     "numero_hero": "v-numero-hero",
     "tarjeta_destacada": "v-tarjeta",
@@ -36,7 +50,7 @@ def render_titulo(slide):
 
 
 def render_cierre(slide):
-    title = slide["fields"].get("title") or "Thank you"
+    title = slide["fields"].get("title") or label(slide, "cierre")
     return f'<div class="big-title pptx-text">{esc(title)}</div><div class="bottom-line"></div>'
 
 
@@ -46,7 +60,7 @@ def render_inicio(slide):
     return f"""
     <div class="panel"><div class="badge">{icon_svg(icon, 110)}</div></div>
     <div class="content">
-      <p class="kicker pptx-text">Inicio</p>
+      <p class="kicker pptx-text">{label(slide, "inicio")}</p>
       <p class="promise pptx-text">{esc(promise)}</p>
     </div>
     <div class="gradient-bar"></div>"""
@@ -60,7 +74,7 @@ def render_resumen(slide):
           <p class="pptx-text">{esc(it.get("text"))}</p>
         </div>""" for it in items)
     return f"""
-    <p class="kicker pptx-text">Resumen</p>
+    <p class="kicker pptx-text">{label(slide, "resumen")}</p>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="grid count-{len(items)}">{cards}</div>"""
 
@@ -75,7 +89,7 @@ def render_numero_hero(slide, meta):
     return f"""
     <div class="glow"></div>
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{label(slide, slide["section"])}</span></div>
     <div class="hero-number">{esc(slide["fields"].get("number") or "01")}</div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="rule"></div>
@@ -93,7 +107,7 @@ def render_tarjeta_destacada(slide, meta):
           </div>""" for s in secondary)
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{label(slide, slide["section"])}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="row">
       <div class="main-card">
@@ -121,7 +135,7 @@ def render_mito_realidad(slide, meta):
         </div>""" for r in rows)
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{label(slide, slide["section"])}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="rows">{rows_html}</div>
     <div class="gradient-bar"></div>"""
@@ -145,7 +159,7 @@ def render_flujo_pasos(slide, meta):
         </div>""")
     return f"""
     <div class="accent-rail"></div>
-    <div class="section-label"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label"><div class="dot"></div><span class="pptx-text">{label(slide, slide["section"])}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="flow">{"".join(parts)}</div>
     <div class="gradient-bar"></div>"""
@@ -160,7 +174,7 @@ def render_panel_tarjetas(slide, meta):
         </div>""" for c in cards)
     return f"""
     <div class="side-panel"><div class="ring">{icon_svg(slide["fields"].get("icon"), 90)}</div></div>
-    <div class="section-label" style="left:700px;"><div class="dot"></div><span class="pptx-text">{meta["label"]}</span></div>
+    <div class="section-label" style="left:700px;"><div class="dot"></div><span class="pptx-text">{label(slide, slide["section"])}</span></div>
     <div class="heading pptx-text">{esc(slide["fields"].get("title"))}</div>
     <div class="stack">{cards_html}</div>
     <div class="gradient-bar"></div>"""
