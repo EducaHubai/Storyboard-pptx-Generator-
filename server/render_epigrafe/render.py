@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Corporate PPT renderer â "epigrafe" format (HTML-first pipeline).
 
-Usage: python3 render.py <input.json> <output.pptx>
+Usage: python3 render.py <input.json> <output.pptx> [png_dir]
+
+If png_dir is given, the full-slide screenshots (text included) are also saved there as
+slide_<index>.png (0-based, plan order) — used by the avatar-video pipeline.
 
 input.json shape (mirrors render_ppt.py's convention so index.js's
 /api/ppt-generate flow works unchanged, just pointed at this script):
@@ -136,7 +139,7 @@ def first_family(css_family):
     return css_family.split(",")[0].strip().strip('"').strip("'")
 
 
-def capture_slide(page, slide, tmp_dir, index):
+def capture_slide(page, slide, tmp_dir, index, png_dir=None):
     html_path = os.path.join(tmp_dir, f"slide-{index}.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(build_html(slide))
@@ -145,10 +148,18 @@ def capture_slide(page, slide, tmp_dir, index):
     text_boxes = page.evaluate(EXTRACT_JS)
     img_path = os.path.join(tmp_dir, f"slide-{index}.png")
     page.screenshot(path=img_path)
+    if png_dir:
+        # The pptx background above has its text hidden (it is overlaid as
+        # editable text boxes); the video needs the full slide, text included.
+        page.evaluate("""() => {
+          document.body.style.margin = '0';
+          document.querySelectorAll('.pptx-text').forEach((el) => { el.style.visibility = ''; });
+        }""")
+        page.screenshot(path=os.path.join(png_dir, f"slide_{index}.png"))
     return img_path, text_boxes
 
 
-def assemble_pptx(plan, scripts_by_n, tmp_dir, out_path):
+def assemble_pptx(plan, scripts_by_n, tmp_dir, out_path, png_dir=None):
     prs = Presentation()
     prs.slide_width = Emu(int(SLIDE_W_IN * 914400))
     prs.slide_height = Emu(int(SLIDE_H_IN * 914400))
@@ -163,7 +174,8 @@ def assemble_pptx(plan, scripts_by_n, tmp_dir, out_path):
         page = browser.new_page(viewport={"width": PX_W, "height": PX_H}, device_scale_factor=SCALE)
 
         for i, slide_data in enumerate(plan["slides"]):
-            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i)
+            slide_data["_lang"] = plan.get("language")  # on-slide labels (templates.label)
+            img_path, text_boxes = capture_slide(page, slide_data, tmp_dir, i, png_dir)
             slide = prs.slides.add_slide(prs.slide_layouts[6])
             slide.shapes.add_picture(img_path, Inches(0), Inches(0), Inches(SLIDE_W_IN), Inches(SLIDE_H_IN))
 
@@ -259,6 +271,9 @@ def embed_fonts(pptx_path):
 
 def main():
     input_path, output_path = sys.argv[1], sys.argv[2]
+    png_dir = sys.argv[3] if len(sys.argv) > 3 else None
+    if png_dir:
+        os.makedirs(png_dir, exist_ok=True)
     with open(input_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
@@ -266,7 +281,7 @@ def main():
     scripts_by_n = {s["n"]: s for s in payload.get("scripts") or []}
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        assemble_pptx(plan, scripts_by_n, tmp_dir, output_path)
+        assemble_pptx(plan, scripts_by_n, tmp_dir, output_path, png_dir)
 
     try:
         embed_fonts(output_path)

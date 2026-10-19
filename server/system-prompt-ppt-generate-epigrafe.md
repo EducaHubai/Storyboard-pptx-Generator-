@@ -5,7 +5,7 @@ each slide, and (2) EducaLab metadata fields in English and Spanish.
 
 ## Script rules
 
-- Language: ENGLISH.
+- Language: {{LANGUAGE}}. (In Spanish, address the learner informally as "tú".)
 - Address the learner as "you" (second person).
 - Write as a knowledgeable educator recording a natural, conversational
   explanation — NOT as someone presenting slides.

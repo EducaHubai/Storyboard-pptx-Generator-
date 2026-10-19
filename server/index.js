@@ -32,6 +32,8 @@ function resolveRenderScript(format) {
   return format === "epigrafe" ? RENDER_EPIGRAFE_SCRIPT : RENDER_PPT_SCRIPT;
 }
 const { EPIGRAFE_PLAN_SCHEMA } = require("./epigrafe-plan-schema");
+const { registerAvatarVideoRoutes } = require("./avatar-video");
+const { LANGUAGES, resolveLanguage, fillLanguage, applyTranslation } = require("./languages");
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -238,6 +240,8 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
     fs.unlink(req.file.path, () => {});
 
     const format = resolveFormat(req.body.format);
+    const language = resolveLanguage(req.body.language);
+    const planPrompt = fillLanguage(PDF_TO_PLAN_PROMPT[format], language);
     // "epigrafe" format is scoped to one epígrafe per deck. Without
     // req.body.epigrafe, the prompt runs in discovery mode and returns the
     // document's full unit → epígrafe structure (as { afo, units: [{ unit,
@@ -261,19 +265,20 @@ app.post("/api/pdf-to-plan", upload.single("pdf"), async (req, res) => {
     if (format === "epigrafe" && req.body.epigrafe) {
       try {
         raw = await callOpenAIStructured(
-          PDF_TO_PLAN_PROMPT[format],
+          planPrompt,
           userMessage,
           EPIGRAFE_PLAN_SCHEMA,
           "epigrafe_plan"
         );
       } catch (structuredErr) {
         console.warn("Structured Outputs call failed, falling back to plain JSON parsing:", structuredErr.message);
-        raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
+        raw = await callOpenAI(planPrompt, userMessage);
       }
     } else {
-      raw = await callOpenAI(PDF_TO_PLAN_PROMPT[format], userMessage);
+      raw = await callOpenAI(planPrompt, userMessage);
     }
     const plan = JSON.parse(raw);
+    if (format === "epigrafe" && Array.isArray(plan.slides)) plan.language = language;
     res.json(plan);
   } catch (err) {
     console.error("pdf-to-plan error:", err);
@@ -304,12 +309,50 @@ app.post("/api/ppt-plan", async (req, res) => {
       ...epigraphs.map((e, i) => `${i + 1}. ${e}`),
     ].filter(Boolean).join("\n");
 
-    const raw = await callOpenAI(PPT_PLAN_PROMPT[resolveFormat(format)], userMessage);
+    const language = resolveLanguage(req.body.language);
+    const raw = await callOpenAI(fillLanguage(PPT_PLAN_PROMPT[resolveFormat(format)], language), userMessage);
     const plan = JSON.parse(raw);
+    if (resolveFormat(format) === "epigrafe" && Array.isArray(plan.slides)) plan.language = language;
     res.json(plan);
   } catch (err) {
     console.error("ppt-plan error:", err);
     res.status(500).json({ error: "Failed to generate slide plan", detail: err.message });
+  }
+});
+
+// ────────────────────────────────────────────────────────────
+// POST /api/translate-plan
+// Plan in one language → same plan in another (structure, icons, variants
+// untouched — only visible text changes; see languages.js).
+// ────────────────────────────────────────────────────────────
+const TRANSLATE_PLAN_PROMPT = `You translate JSON slide-deck plans for corporate e-learning.
+Translate every human-readable string value into {{LANGUAGE}}.
+Keep the JSON structure, keys, array lengths and order exactly identical.
+Do not change identifiers (n, section, variant, icon, format, number, language).
+Keep proper nouns, acronyms and established technical terms. Keep each text about the same length.
+Return only the JSON.`;
+
+app.post("/api/translate-plan", async (req, res) => {
+  try {
+    const { plan, language } = req.body;
+    if (!plan || !Array.isArray(plan.slides)) {
+      return res.status(400).json({ error: "Missing 'plan' in request body." });
+    }
+    if (!LANGUAGES[language]) {
+      return res.status(400).json({ error: "Unsupported 'language'." });
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: "Server is missing OPENAI_API_KEY." });
+    }
+    const raw = await callOpenAI(
+      fillLanguage(TRANSLATE_PLAN_PROMPT, language),
+      JSON.stringify(plan),
+      8000
+    );
+    res.json(applyTranslation(plan, JSON.parse(raw), language));
+  } catch (err) {
+    console.error("translate-plan error:", err);
+    res.status(500).json({ error: "Failed to translate plan", detail: err.message });
   }
 });
 
@@ -329,7 +372,7 @@ app.post("/api/ppt-generate", async (req, res) => {
 
     // Step 1: generate scripts + EducaLab metadata via GPT-4o
     const raw = await callOpenAI(
-      PPT_GENERATE_PROMPT[resolveFormat(plan.format)],
+      fillLanguage(PPT_GENERATE_PROMPT[resolveFormat(plan.format)], plan.language),
       `Generate the avatar script and EducaLab metadata for this approved slide plan:\n\n${JSON.stringify(plan, null, 2)}`,
       6000
     );
@@ -366,7 +409,9 @@ app.post("/api/ppt-generate", async (req, res) => {
     const scriptHeader = Buffer.from(JSON.stringify(generated.slides || [])).toString("base64");
     res.setHeader("X-Educalab-Meta", metaHeader);
     res.setHeader("X-Script-Data", scriptHeader);
-    const fileName = format === "epigrafe" ? buildEpigrafeFileName(plan) : buildUnitFileName(plan);
+    const fileName = format === "epigrafe"
+      ? `${buildEpigrafeFileName(plan)}-${LANGUAGES[resolveLanguage(plan.language)].suffix}`
+      : buildUnitFileName(plan);
     res.download(outPath, `${fileName}.pptx`, () => {
       fs.unlink(outPath, () => {});
     });
@@ -640,6 +685,15 @@ function buildEpigrafeFileName(plan) {
   const modulo = clean(plan.afo) || "Modulo";
   return `${codigo}-${modulo}`;
 }
+
+// ────────────────────────────────────────────────────────────
+// Avatar video (HeyGen) — /api/heygen/*, /api/avatar-video*
+// ────────────────────────────────────────────────────────────
+registerAvatarVideoRoutes(app, {
+  renderScript: RENDER_EPIGRAFE_SCRIPT,
+  pythonBin: PYTHON_BIN,
+  isEpigrafePlan: (plan) => resolveFormat(plan.format) === "epigrafe",
+});
 
 // ────────────────────────────────────────────────────────────
 // Serve the built React app (production only)
